@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+pymupdf
+python-docx
+openpyxl
+streamlit
+requests
+pytest
+email-validator
+python-multipart
+pandas
+google-genai
+google-auth
+dotenv

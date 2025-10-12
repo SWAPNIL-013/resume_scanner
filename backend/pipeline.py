@@ -1,66 +1,70 @@
 # pipeline.py
 from parser import extract_text_and_links
 from llm import generate_resume_json
-from jd_llm import generate_jd_json
 from scoring_llm import generate_score
-from utils import total_experience_from_resume
+from utils import format_experience_years, total_experience_from_resume
+import json
 
-def run_pipeline(resume_file_path: str, jd_text: str, weights: dict) -> dict:
+def run_pipeline(resume_file_path: str, weights: dict, jd_json: dict) -> dict:
+    """
+    Process a single resume against a pre-generated JD JSON.
+    """
     # 1️⃣ Extract resume text and links
     resume_text, resume_links = extract_text_and_links(resume_file_path)
     resume_text_with_links = resume_text + "\n\nLinks found: " + ", ".join(resume_links)
     print(f"The extracted text is :\n {resume_text_with_links} \nGenerating resume json through llm....") # logging statement
 
-    # 2️⃣ Generate resume JSON
+    # 2️⃣ Generate Resume JSON
     resume_json = generate_resume_json(resume_text_with_links)
 
-    # Calculate total experience
-    resume_total_experience = total_experience_from_resume(resume_json["experience"])
-    
-    # add total experience in resume json 
-    resume_json["total_experience_years"] = resume_total_experience
 
-    print(f"parsed resume : \n {resume_json} \nGenerating jd json....") # logging statement 
-    
-    # 3️⃣ Generate JD JSON
-    jd_json = generate_jd_json(jd_text)
+    # 3️⃣ Calculate total experience
+    float_experience_years = total_experience_from_resume(resume_json["experience"])
+    total_experience_years=format_experience_years(float_experience_years)
+    resume_json["total_experience_years"] = total_experience_years
+    print(f"parsed resume : \n {resume_json} \nCalculating Score....") # logging statement 
 
-    print(f"jd json is:\n {jd_json} \nCalculating score.... ") # logging statement 
-
-    # 4️⃣ Get score from LLM
-    scored_result = generate_score(resume_json, jd_json, weights, resume_total_experience)
-
+    # 4️⃣ Score resume vs JD
+    scored_result = generate_score(resume_json, jd_json, weights, float_experience_years)
     print(f"scored result :\n {scored_result}\n") # logging statement 
 
 
+# 5️⃣ Combine final output
     resume_dict = {
-    **resume_json,  # unpack original parsed resume
-    "total_experience": resume_total_experience,
-    "score": scored_result.get("total"),
-    "remarks": scored_result.get("remarks", []),
-    "scoring_breakdown": {
-        "skills": scored_result.get("skills"),
-        "experience": scored_result.get("experience"),
-        "education": scored_result.get("education"),
-        "certifications": scored_result.get("certifications"),
+        **resume_json,
+        "score": scored_result.get("total"),
+        "remarks": scored_result.get("remarks", []),
+        "scoring_breakdown": {
+            "skills": scored_result.get("skills"),
+            "experience": scored_result.get("experience"),
+            "education": scored_result.get("education"),
+            "certifications": scored_result.get("certifications"),
+        },
+        "matched_skills": scored_result.get("matched_skills", []),
+        "missing_skills": scored_result.get("missing_skills", []),
+        "other_skills": scored_result.get("other_skills", [])
     }
-}
-
+    
     return resume_dict
 
 
-
-# Test run
+# --------------------------
+# Test runner
+# --------------------------
 if __name__ == "__main__":
-    resume_file = "samples/Sakshi_Kusmude_Resume (4).pdf"
+    from jd_llm import generate_jd_json
+
+    # ✅ Sample Job Description
     jd_text = """
     Title: Data Scientist
-    Skills: Python, Machine Learning, Data Analysis, SQL
+    Skills: Python, Machine Learning, Power BI, SQL,Docker
     Education: B.Tech in IT
     Experience: 2 years
     Responsibilities: Build ML models, Analyze datasets
     Certifications: AWS Machine Learning Foundations
     """
+
+    # ✅ Sample weights
     weights = {
         "skills": 0.4,
         "experience": 0.3,
@@ -68,7 +72,24 @@ if __name__ == "__main__":
         "certifications": 0.1
     }
 
-    pipeline_output = run_pipeline(resume_file, jd_text, weights)
+    # ✅ Pre-generate JD JSON once
+    print("Generating JD JSON...")
+    jd_json = generate_jd_json(jd_text)
 
-    import json
-    print(json.dumps(pipeline_output, indent=2))
+    # ✅ List of sample resumes to test
+    resume_files = [
+        # "samples/Sakshi_Kusmude_Resume (4).pdf"
+     "samples/Swapnil_Shete_Resume (3).pdf"
+    ]
+
+    # ✅ Process resumes
+    results = []
+    for resume_file in resume_files:
+        print(f"\n[INFO] Processing resume: {resume_file}")
+        result = run_pipeline(resume_file_path=resume_file, weights=weights, jd_json=jd_json)
+        results.append(result)
+
+    # ✅ Print results in readable JSON format
+    print("\n🎯 Test Pipeline Results:")
+    print(json.dumps(results, indent=2))
+    

@@ -3,14 +3,12 @@ import pandas as pd
 from typing import List, Dict
 from datetime import datetime
 import glob
-from utils import format_experience_years
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment
+from utils import format_experience_years
 
 EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports")
 os.makedirs(EXPORTS_DIR, exist_ok=True)
-
-MASTER_FILE = os.path.join(EXPORTS_DIR, "resumes.xlsx")
 
 
 def get_new_excel_name(base_name="resumes", ext=".xlsx"):
@@ -28,7 +26,6 @@ def get_new_excel_name(base_name="resumes", ext=".xlsx"):
 
 
 def multiline(text: str, sep=",") -> str:
-    """Convert comma/semicolon separated text to multi-line string."""
     if not text:
         return ""
     parts = [p.strip() for p in text.replace(";", ",").split(",") if p.strip()]
@@ -36,7 +33,6 @@ def multiline(text: str, sep=",") -> str:
 
 
 def format_experience_list(experience: List[Dict]) -> str:
-    """Format each experience on a new line with indentation."""
     lines = []
     for exp in experience:
         role = exp.get("role", "")
@@ -46,13 +42,12 @@ def format_experience_list(experience: List[Dict]) -> str:
         desc = exp.get("description", "")
         line = f"{role} at {company} ({start} - {end})"
         if desc:
-            line += f"\n    {desc}"
+            line += f"\n {desc}"
         lines.append(line)
     return "\n".join(lines)
 
 
 def format_projects_list(projects: List[Dict]) -> str:
-    """Format each project on a new line with technologies and description."""
     lines = []
     for proj in projects:
         title = proj.get("title", "")
@@ -65,37 +60,27 @@ def format_projects_list(projects: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-def export_to_excel(resume_list: List[Dict], output_path: str, append: bool = False) -> pd.DataFrame:
-    """
-    Export resumes with better readability:
-    - Wrap text
-    - Multi-line for Skills, URLs, Projects, Remarks, Certifications
-    - Bold headers and freeze top row
-    - Experience and Projects are formatted line-by-line with indentation
-    """
-    if append and os.path.exists(output_path):
-        wb = load_workbook(output_path)
-        ws = wb.active
-    else:
-        wb = Workbook()
-        ws = wb.active
-        # Write headers
+def write_resumes_to_sheet(ws, resume_list: List[Dict], is_new_sheet=False):
+    start_row = ws.max_row + 1 if not is_new_sheet else 1
+
+    if is_new_sheet:
         headers = [
-            "Name", "Email", "Phone", "URLs", "Skills",
+            "Name", "Email", "Phone","Location", "URLs", "Skills",
             "Education", "Experience", "Projects", "Certifications",
             "Experience Years", "Score", "Remarks", "Uploaded At"
         ]
         ws.append(headers)
-        for col in range(1, len(headers)+1):
+        for col in range(1, len(headers) + 1):
             ws.cell(row=1, column=col).font = Font(bold=True)
         ws.freeze_panes = "A2"
+        start_row = 2
 
-    # Add rows
     for resume in resume_list:
         row = [
             resume.get("name", ""),
             resume.get("email", ""),
             resume.get("phone", ""),
+            resume.get("location",""),
             multiline("; ".join(resume.get("urls", []))) if isinstance(resume.get("urls"), list) else resume.get("urls", ""),
             multiline(", ".join(resume.get("skills", []))) if isinstance(resume.get("skills"), list) else resume.get("skills", ""),
             "; ".join(
@@ -105,14 +90,14 @@ def export_to_excel(resume_list: List[Dict], output_path: str, append: bool = Fa
             format_experience_list(resume.get("experience", [])) if isinstance(resume.get("experience"), list) else resume.get("experience", ""),
             format_projects_list(resume.get("projects", [])) if isinstance(resume.get("projects"), list) else resume.get("projects", ""),
             multiline("; ".join(resume.get("certifications", []))) if isinstance(resume.get("certifications"), list) else resume.get("certifications", ""),
-            format_experience_years(resume.get("total_experience", 0)),
+            resume.get("total_experience_years", 0),
             resume.get("score", ""),
             multiline("; ".join(resume.get("remarks", []))) if isinstance(resume.get("remarks"), list) else resume.get("remarks", ""),
             resume.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         ]
         ws.append(row)
 
-    # Wrap text & adjust column width
+    # Adjust column widths
     for col in ws.columns:
         max_len = 0
         col_letter = col[0].column_letter
@@ -122,9 +107,48 @@ def export_to_excel(resume_list: List[Dict], output_path: str, append: bool = Fa
                 max_len = max(max_len, max(len(str(line)) for line in str(cell.value).split("\n")))
         ws.column_dimensions[col_letter].width = min(max_len + 5, 50)
 
-    wb.save(output_path)
-    print(f"✅ Resumes exported to {output_path} (append={append})")
 
-    # Also return as DataFrame if needed
-    df = pd.DataFrame(resume_list)
-    return df
+def export_to_excel(
+    resume_list: List[Dict],
+    mode: str = "new_file",
+    file_path: str = None,
+    sheet_name: str = None
+) -> pd.DataFrame:
+    # Ensure file is in exports folder
+    if file_path:
+        file_path = os.path.join(EXPORTS_DIR, os.path.basename(file_path))
+    else:
+        file_path = get_new_excel_name()
+
+    if mode == "new_file":
+        wb = Workbook()
+        ws = wb.create_sheet(title=sheet_name or "Sheet1")
+        if "Sheet" in wb.sheetnames:
+            del wb["Sheet"]
+        write_resumes_to_sheet(ws, resume_list, is_new_sheet=True)
+
+    elif mode == "append_sheet":
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        wb = load_workbook(file_path)
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(f"Sheet '{sheet_name}' not found in file.")
+        ws = wb[sheet_name]
+        write_resumes_to_sheet(ws, resume_list, is_new_sheet=False)
+
+    elif mode == "new_sheet":
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        wb = load_workbook(file_path)
+        if sheet_name in wb.sheetnames:
+            raise ValueError(f"Sheet '{sheet_name}' already exists.")
+        ws = wb.create_sheet(title=sheet_name)
+        write_resumes_to_sheet(ws, resume_list, is_new_sheet=True)
+
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    wb.save(file_path)
+    print(f"✅ Exported to {file_path} [{mode}] → sheet: {sheet_name or 'Sheet1'}")
+
+    return pd.DataFrame(resume_list)

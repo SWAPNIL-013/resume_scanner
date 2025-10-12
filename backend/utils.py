@@ -1,24 +1,3 @@
-def flatten_resume(resume: dict) -> dict:
-    """Convert list/dict fields into clean strings for display/Excel and scoring."""
-    flat = resume.copy()
-
-    # Flatten lists to strings
-    flat["skills"] = ", ".join(flat.get("skills", [])) if isinstance(flat.get("skills"), list) else str(flat.get("skills", ""))
-    flat["projects"] = "; ".join(
-        [f"{p.get('title','')} ({', '.join(p.get('technologies', []))})" for p in flat.get("projects", [])]
-    ) if isinstance(flat.get("projects"), list) else str(flat.get("projects", ""))
-    flat["education"] = "; ".join(
-        [f"{e.get('degree','')} - {e.get('institution','')} ({e.get('year','')})" for e in flat.get("education", [])]
-    ) if isinstance(flat.get("education"), list) else str(flat.get("education", ""))
-    flat["experience"] = "; ".join(
-        [f"{ex.get('role','')} at {ex.get('company','')} ({ex.get('start_date','')} - {ex.get('end_date','')})"
-         for ex in flat.get("experience", [])]
-    ) if isinstance(flat.get("experience"), list) else str(flat.get("experience", ""))
-    flat["certifications"] = ", ".join(flat.get("certifications", [])) if isinstance(flat.get("certifications"), list) else str(flat.get("certifications", ""))
-
-    return flat
-
-
 # helper for experience calculation
 from datetime import datetime
 def calculate_experience_readable(start_date: str, end_date: str) -> str:

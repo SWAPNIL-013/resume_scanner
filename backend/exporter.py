@@ -5,8 +5,6 @@ from datetime import datetime
 import glob
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment
-from utils import format_experience_years
-
 EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports")
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
@@ -67,7 +65,7 @@ def write_resumes_to_sheet(ws, resume_list: List[Dict], is_new_sheet=False):
         headers = [
             "Name", "Email", "Phone","Location", "URLs", "Skills",
             "Education", "Experience", "Projects", "Certifications",
-            "Experience Years", "Score", "Remarks", "Uploaded At"
+            "Experience Years", "Score", "Remarks", "Uploaded At","Matched Skills","Missing Skills","Other Skills"
         ]
         ws.append(headers)
         for col in range(1, len(headers) + 1):
@@ -93,7 +91,11 @@ def write_resumes_to_sheet(ws, resume_list: List[Dict], is_new_sheet=False):
             resume.get("total_experience_years", 0),
             resume.get("score", ""),
             multiline("; ".join(resume.get("remarks", []))) if isinstance(resume.get("remarks"), list) else resume.get("remarks", ""),
-            resume.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            resume.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            multiline(", ".join(resume.get("matched_skills", []))),
+            multiline(", ".join(resume.get("missing_skills", []))),
+            multiline(", ".join(resume.get("other_skills", [])))
+
         ]
         ws.append(row)
 

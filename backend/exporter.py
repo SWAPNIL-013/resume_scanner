@@ -9,10 +9,16 @@ EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports"
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 
-def get_new_excel_name(base_name="resumes", ext=".xlsx"):
-    existing_files = sorted(glob.glob(os.path.join(EXPORTS_DIR, f"{base_name}*.xlsx")))
+def get_new_excel_name(base_name="resumes", ext=".xlsx", base_dir: str = None):
+    """
+    Return a new excel filename inside base_dir (defaults to EXPORTS_DIR).
+    """
+    if base_dir is None:
+        base_dir = EXPORTS_DIR
+    os.makedirs(base_dir, exist_ok=True)
+    existing_files = sorted(glob.glob(os.path.join(base_dir, f"{base_name}*.xlsx")))
     if not existing_files:
-        return os.path.join(EXPORTS_DIR, f"{base_name}.xlsx")
+        return os.path.join(base_dir, f"{base_name}.xlsx")
     else:
         nums = []
         for f in existing_files:
@@ -20,7 +26,7 @@ def get_new_excel_name(base_name="resumes", ext=".xlsx"):
             if fname.startswith("_") and fname[1:].isdigit():
                 nums.append(int(fname[1:]))
         next_num = max(nums, default=1) + 1
-        return os.path.join(EXPORTS_DIR, f"{base_name}_{next_num:02d}{ext}")
+        return os.path.join(base_dir, f"{base_name}_{next_num:02d}{ext}")
 
 
 def multiline(text: str, sep=",") -> str:
@@ -114,13 +120,17 @@ def export_to_excel(
     resume_list: List[Dict],
     mode: str = "new_file",
     file_path: str = None,
-    sheet_name: str = None
+    sheet_name: str = None,
+    base_dir: str = None
 ) -> pd.DataFrame:
     # Ensure file is in exports folder
+    if base_dir is None:
+        base_dir = EXPORTS_DIR
+
     if file_path:
-        file_path = os.path.join(EXPORTS_DIR, os.path.basename(file_path))
+        file_path = os.path.join(base_dir, os.path.basename(file_path))
     else:
-        file_path = get_new_excel_name()
+        file_path = get_new_excel_name(base_dir=base_dir)
 
     if mode == "new_file":
         wb = Workbook()

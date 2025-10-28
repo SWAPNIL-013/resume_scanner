@@ -13,3 +13,6 @@ pandas
 google-genai
 google-auth
 dotenv
+pyjwt
+passlib[bcrypt]
+pyflakes

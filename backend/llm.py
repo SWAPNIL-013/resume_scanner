@@ -5,7 +5,7 @@ from schema import ResumeSchema
 from utils import add_experience_duration_readable, call_llm
 
 # ----------------- Generate Resume JSON -----------------
-def generate_resume_json(text: str) -> Dict:
+def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> Dict:
     prompt = f"""
     You are a resume parser. Extract the following fields from the text and return JSON ONLY.
 
@@ -45,17 +45,24 @@ def generate_resume_json(text: str) -> Dict:
     """
 
     # Call LLM
-    llm_output = call_llm(prompt)
+    llm_output = call_llm(prompt, model=model, api_key=api_key)
 
-    # ----------------- Safe JSON Parsing -----------------
-    if isinstance(llm_output, dict):
-        parsed_json = llm_output
+    # ----------------- Handle LLM errors -----------------
+    if isinstance(llm_output, dict) and llm_output.get("error"):
+        err = llm_output.get("error")
+        print(f"[LLM ERROR] {err}")
+        # Return an empty validated resume schema so downstream code has consistent shape
+        parsed_json = {}
     else:
-        try:
-            parsed_json = json.loads(llm_output)
-        except json.JSONDecodeError:
-            print("⚠️ LLM output is not valid JSON. Returning empty resume structure.")
-            parsed_json = {}
+        # llm_output might already be a dict (parsed JSON) or a raw string
+        if isinstance(llm_output, dict):
+            parsed_json = llm_output
+        else:
+            try:
+                parsed_json = json.loads(llm_output)
+            except json.JSONDecodeError:
+                print("⚠️ LLM output is not valid JSON. Returning empty resume structure.")
+                parsed_json = {}
 
     # ----------------- Validate and enrich -----------------
     try:

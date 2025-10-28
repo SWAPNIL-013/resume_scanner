@@ -4,11 +4,12 @@ import json
 from dotenv import load_dotenv
 from google import genai
 from jd_schema import JobDescriptionSchema
+from utils import call_llm
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def generate_jd_json(jd_text: str) -> dict:
+def generate_jd_json(jd_text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> dict:
     """
     Convert JD text into structured JSON using LLM.
     """
@@ -29,28 +30,28 @@ def generate_jd_json(jd_text: str) -> dict:
     {jd_text}
     """
     
+    # Use centralized LLM caller (benefits from retries and structured errors)
+    llm_result = call_llm(prompt, model=model, api_key=api_key)
+
+    if isinstance(llm_result, dict) and llm_result.get("error"):
+        print(f"JD parsing failed: {llm_result.get('error')}")
+        return {}
+
+    # llm_result should be a dict (parsed JSON) or a raw string
+    if isinstance(llm_result, dict):
+        parsed = llm_result
+    else:
+        try:
+            parsed = json.loads(llm_result)
+        except json.JSONDecodeError:
+            print("JD parsing failed: LLM returned non-JSON response")
+            return {}
+
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[{"parts":[{"text": prompt}]}]
-        )
-
-        raw_output = response.text.strip()
-
-        # Remove markdown if present
-        if raw_output.startswith("```json"):
-            raw_output = raw_output[len("```json"):].strip()
-        if raw_output.startswith("```"):
-            raw_output = raw_output[len("```"):].strip()
-        if raw_output.endswith("```"):
-            raw_output = raw_output[:-len("```")].strip()
-
-        parsed = json.loads(raw_output)
         jd = JobDescriptionSchema.model_validate(parsed)
         return jd.model_dump()
-    
     except Exception as e:
-        print(f"JD parsing failed: {e}")
+        print(f"JD schema validation failed: {e}")
         return {}
 
 

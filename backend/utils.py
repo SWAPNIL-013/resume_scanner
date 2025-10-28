@@ -146,32 +146,105 @@ def format_experience_years(exp_float: float) -> str:
 import os
 import json
 from dotenv import load_dotenv
-from google import genai
 # Load env once
 load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def call_llm(prompt: str, model: str = "gemini-2.5-flash") -> dict:
-    """
-    Generic helper to call Gemini API with a prompt and return parsed JSON.
-    Strips markdown fences and safely loads JSON.
-    """
+from google import genai
+
+# Load env once
+load_dotenv()
+# default client uses env var if available
+_GLOBAL_CLIENT = None
+if os.getenv("GEMINI_API_KEY"):
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=[{"parts": [{"text": prompt}]}]
-        )
-        raw_output = response.text.strip()
+        _GLOBAL_CLIENT = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    except Exception:
+        _GLOBAL_CLIENT = None
 
-        # Strip markdown fences if present
-        if raw_output.startswith("```json"):
-            raw_output = raw_output[len("```json"):].strip()
-        if raw_output.startswith("```"):
-            raw_output = raw_output[len("```"):].strip()
-        if raw_output.endswith("```"):
-            raw_output = raw_output[:-len("```")].strip()
 
-        return json.loads(raw_output)
-    except Exception as e:
-        print(f"[LLM ERROR] {e}")
-        return {}
+def call_llm(prompt: str, model: str = "gemini-2.5-flash", *, api_key: str = None, max_retries: int = 3, backoff_factor: float = 1.0) -> dict:
+    """
+    Robust wrapper to call Gemini (or compatible) LLM clients.
+
+    Behavior:
+    - Retries transient errors with exponential backoff + jitter.
+    - Returns a dict on success (parsed JSON) or a structured error dict on failure:
+        {"error": {"message": str, "code": optional_int, "type": "llm_error"}}
+
+    Callers should check for the presence of the top-level "error" key.
+    """
+
+    import time
+    import random
+
+    def _strip_markdown(s: str) -> str:
+        s = s.strip()
+        if s.startswith("```json"):
+            s = s[len("```json"):].strip()
+        if s.startswith("```"):
+            s = s[len("```"):].strip()
+        if s.endswith("```"):
+            s = s[:-len("```")].strip()
+        return s
+
+    last_exc = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            # choose client: prefer provided api_key, else global client
+            if api_key:
+                client = genai.Client(api_key=api_key)
+            else:
+                client = _GLOBAL_CLIENT
+
+            if client is None:
+                raise RuntimeError("No LLM client available. Provide an API key from the frontend or set GEMINI_API_KEY in env")
+
+            response = client.models.generate_content(
+                model=model,
+                contents=[{"parts": [{"text": prompt}]}]
+            )
+
+            raw_output = _strip_markdown(response.text)
+
+            # If the SDK surfaces an error structure, try to detect it
+            # e.g., some clients may include status/code in attributes
+            if hasattr(response, "status") and response.status >= 400:
+                msg = getattr(response, "message", getattr(response, "status_text", "LLM returned error"))
+                return {"error": {"message": str(msg), "code": int(getattr(response, "status", 0)), "type": "llm_error"}}
+
+            # Parse JSON safely
+            try:
+                return json.loads(raw_output)
+            except json.JSONDecodeError:
+                # Return the raw string inside an error structure so callers can log it
+                return {"error": {"message": "LLM returned non-JSON response", "raw": raw_output, "type": "llm_error"}}
+
+        except Exception as e:
+            # If the exception appears transient (network/503), retry with backoff
+            last_exc = e
+            err_str = str(e)
+            # Basic heuristic: retry on 429 / 502 / 503 / connection issues
+            retryable = any(code in err_str for code in ["429", "502", "503", "504"]) or "timed out" in err_str.lower() or "overloaded" in err_str.lower()
+            print(f"[LLM ERROR] attempt {attempt}/{max_retries}: {e}")
+
+            if attempt == max_retries or not retryable:
+                # Return structured error
+                code = None
+                # Try to extract numeric code
+                import re
+                m = re.search(r"(\b\d{3}\b)", err_str)
+                if m:
+                    try:
+                        code = int(m.group(1))
+                    except Exception:
+                        code = None
+
+                return {"error": {"message": err_str, "code": code, "type": "llm_error"}}
+
+            # Backoff with jitter
+            sleep = backoff_factor * (2 ** (attempt - 1))
+            sleep = sleep * (0.5 + random.random() * 0.5)  # add jitter between 50%-100%
+            time.sleep(sleep)
+
+    # Fallback structured error if loop exits unexpectedly
+    return {"error": {"message": str(last_exc), "type": "llm_error"}}

@@ -2,7 +2,7 @@
 import json
 from utils import call_llm
 
-def generate_score(resume_json: dict, jd_json: dict, weights: dict, resume_total_experience: float) -> dict:
+def generate_score(resume_json: dict, jd_json: dict, weights: dict, resume_total_experience: float, *, api_key: str = None, model: str = "gemini-2.5-flash") -> dict:
     """
     Use LLM to score a resume against the job description.
     Also returns matched_skills and other_skills based on semantic similarity.
@@ -57,7 +57,26 @@ Instructions:
 """
 
     # Call your LLM function
-    return call_llm(prompt)
+    result = call_llm(prompt, model=model, api_key=api_key)
+
+    # If LLM returned an error structure, return a safe default scoring object
+    if isinstance(result, dict) and result.get("error"):
+        err = result.get("error")
+        print(f"[LLM ERROR] {err}")
+        # Safe default scoring structure
+        return {
+            "skills": 0.0,
+            "experience": 0.0,
+            "education": 0.0,
+            "certifications": 0.0,
+            "total": 0.0,
+            "remarks": [f"LLM error: {err.get('message') or str(err)}"],
+            "matched_skills": [],
+            "missing_skills": [],
+            "other_skills": []
+        }
+
+    return result
 
 
 # ----------------- Test Runner -----------------

@@ -29,21 +29,192 @@ if "weights" not in st.session_state:
         "education": 0.2,
         "certifications": 0.1
     }
-if "save_mode" not in st.session_state:
-    st.session_state.save_mode = "new_file"
-if "results" not in st.session_state:
-    st.session_state.results = None
-if "excel_file" not in st.session_state:
-    st.session_state.excel_file = None
+
+# Ensure additional session keys exist to avoid Streamlit AttributeError
 if "evaluation_done" not in st.session_state:
     st.session_state.evaluation_done = False
 if "evaluation_response" not in st.session_state:
     st.session_state.evaluation_response = None
+if "results" not in st.session_state:
+    st.session_state.results = None
+if "excel_file" not in st.session_state:
+    st.session_state.excel_file = None
+if "jd_data" not in st.session_state:
+    st.session_state.jd_data = None
+if "auth_token" not in st.session_state:
+    st.session_state.auth_token = None
+if "current_user" not in st.session_state:
+    st.session_state.current_user = None
+if "llm_model" not in st.session_state:
+    # default model (can be overridden by sidebar)
+    st.session_state.llm_model = "gemini-2.5-flash"
+if "llm_api_key" not in st.session_state:
+    st.session_state.llm_api_key = None
+if "save_mode" not in st.session_state:
+    st.session_state.save_mode = None
+if "show_auth" not in st.session_state:
+    # When True, the sidebar shows the login/register form. Clear after login.
+    st.session_state.show_auth = True
+
+
+def safe_rerun():
+    """Try to trigger a Streamlit rerun in a backwards/forwards-compatible way.
+
+    - Prefer st.experimental_rerun() where available.
+    - Otherwise change a query param (st.experimental_set_query_params) to force a rerun.
+    - If neither exists, toggle a session flag as a non-crashing fallback.
+    """
+    try:
+        fn = getattr(st, "experimental_rerun", None)
+        if callable(fn):
+            fn()
+            return
+
+        # Prefer the newer query params API. Assigning to st.query_params
+        # will update the URL params and force a rerun in modern Streamlit.
+        try:
+            qp = getattr(st, "query_params", None)
+            if qp is not None:
+                import time
+
+                st.query_params = {"_rerun": int(time.time())}
+                return
+        except Exception:
+            # fall through to session toggle fallback
+            pass
+    except Exception as e:
+        # don't raise to UI; fall back to session toggle
+        print(f"safe_rerun helper failed: {e}")
+
+    # best-effort fallback: toggle a lightweight session-state flag
+    st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
+
+
+def force_rerun():
+    """More aggressive rerun: try multiple methods to force Streamlit to refresh.
+
+    Tries, in order:
+    - st.experimental_rerun()
+    - st.experimental_set_query_params (if available)
+    - assignment to st.query_params
+    - toggling a session-state flag
+    """
+    try:
+        fn = getattr(st, "experimental_rerun", None)
+        if callable(fn):
+            fn()
+            return
+    except Exception:
+        pass
+
+    # try assigning st.query_params
+    try:
+        import time
+
+        qp = getattr(st, "query_params", None)
+        if qp is not None:
+            st.query_params = {"_rerun": int(time.time())}
+            return
+    except Exception:
+        pass
+
+    # fallback: toggle a session flag
+    st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
+
 
 # --------------------------
-# Title
+# Sidebar: Account + LLM Settings
 # --------------------------
-st.title("Resume Scanner System")
+with st.sidebar:
+    st.header("Account")
+    st.markdown("---")
+    st.subheader("LLM Settings (optional)")
+    model_choices = {
+        "Gemini 2.5 Flash (fast, recommended)": "gemini-2.5-flash",
+        "Gemini 1.5 Pro (balanced)": "gemini-1.5-pro",
+        "Gemini 1.0 (smaller, cheaper)": "gemini-1.0",
+        "Custom model name": "custom"
+    }
+    model_label = st.selectbox("Choose model", list(model_choices.keys()), index=0, key="_llm_model_select")
+    selected_model_value = model_choices[model_label]
+    if selected_model_value == "custom":
+        custom_model = st.text_input("Custom model name", key="_llm_model_custom")
+        model_value = custom_model or "gemini-2.5-flash"
+    else:
+        model_value = selected_model_value
+
+    api_key_input = st.text_input("Model API Key (optional)", type="password", key="_llm_api_key")
+
+    # persist choices in session state so other UI actions pick them up
+    if model_value:
+        st.session_state.llm_model = model_value
+    if api_key_input:
+        st.session_state.llm_api_key = api_key_input
+
+    # Put account controls inside a sidebar container so we can explicitly clear it
+    account_container = st.container()
+
+    supports_on_submit = False
+    # Callback to handle auth form submission. Using on_submit ensures
+    # session_state is updated immediately and allows us to call experimental_rerun
+    def _handle_auth_submit():
+        auth_tab = st.session_state.get("auth_tab", "Login")
+        username = st.session_state.get("_auth_username", "")
+        password = st.session_state.get("_auth_password", "")
+        full_name = st.session_state.get("_auth_fullname", "")
+        try:
+            if auth_tab == "Register":
+                resp = requests.post(
+                    "http://127.0.0.1:8000/register",
+                    params={"username": username, "password": password, "full_name": full_name},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    st.success("Registration successful. Please login.")
+                else:
+                    st.error(f"Registration failed: {resp.text}")
+            else:
+                resp = requests.post(
+                    "http://127.0.0.1:8000/login",
+                    params={"username": username, "password": password},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    token = resp.json().get("access_token")
+                    st.session_state.auth_token = token
+                    st.session_state.current_user = username
+                    st.session_state.show_auth = False
+                else:
+                    st.error(f"Login failed: {resp.text}")
+        except Exception as e:
+            st.error(f"Auth request failed: {e}")
+
+    with account_container:
+        # Account controls
+        if not st.session_state.get("show_auth") and st.session_state.get("current_user"):
+            # user already logged in -> show signed-in view
+            st.markdown(f"**Signed in as:** {st.session_state.current_user}")
+            if st.button("Logout", key="btn_logout"):
+                # clear session state and remove the container contents immediately
+                st.session_state.auth_token = None
+                st.session_state.current_user = None
+                st.session_state.show_auth = True
+                st.success("Logged out")
+                # best-effort immediate rerun
+                force_rerun()
+        else:
+            # Use plain widgets (not st.form) to avoid Streamlit form lifecycle quirks
+            # Widgets write directly to st.session_state keys so the handler can read them.
+            st.selectbox("Action", ("Login", "Register"), key="auth_tab")
+            st.text_input("Username", key="_auth_username")
+            st.text_input("Password", type="password", key="_auth_password")
+            st.text_input("Full name (register only)", key="_auth_fullname")
+            if st.button("Submit", key="btn_auth_submit"):
+                _handle_auth_submit()
+                # Trigger a rerun so the sidebar updates immediately
+                force_rerun()
+            # LLM settings are picked from session_state keys set by the sidebar
+
 
 # --------------------------
 # Step 1: Upload Resumes
@@ -56,9 +227,17 @@ if st.session_state.step >= 1:
 
     if uploaded_files:
         st.session_state.uploaded_files = uploaded_files
-        if st.button("Upload Resume(s)"):
+        if st.button("Upload Resume(s)", key="btn_upload_resumes"):
             files_data = [("files", (file.name, file.getvalue())) for file in uploaded_files]
-            response = requests.post("http://127.0.0.1:8000/upload_resumes_only", files=files_data)
+            headers = {}
+            if st.session_state.auth_token:
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            # include llm settings if present
+            if st.session_state.get("llm_model"):
+                headers["X-Model"] = st.session_state.get("llm_model")
+            if st.session_state.get("llm_api_key"):
+                headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+            response = requests.post("http://127.0.0.1:8000/upload_resumes_only", files=files_data, headers=headers)
             if response.status_code == 200:
                 st.session_state.uploaded_paths = response.json()["uploaded_paths"]
                 st.success("✅ Resume(s) uploaded successfully!")
@@ -92,7 +271,7 @@ Certifications: AWS Machine Learning Foundations"""
     st.session_state.weights["education"] = st.slider("Education Weight", 0.0, 1.0, st.session_state.weights["education"], 0.05)
     st.session_state.weights["certifications"] = st.slider("Certifications Weight", 0.0, 1.0, st.session_state.weights["certifications"], 0.05)
 
-    if st.button("Evaluate Resume(s)"):
+    if st.button("Evaluate Resume(s)", key="btn_evaluate"):
         if not st.session_state.uploaded_paths or not jd_text.strip():
             st.warning("Please upload resumes and enter JD before proceeding.")
         else:
@@ -103,7 +282,14 @@ Certifications: AWS Machine Learning Foundations"""
                 "education_weight": st.session_state.weights["education"],
                 "certifications_weight": st.session_state.weights["certifications"]
             }
-            response = requests.post("http://127.0.0.1:8000/upload_jd", params=params)
+            headers = {}
+            if st.session_state.auth_token:
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            if st.session_state.get("llm_model"):
+                headers["X-Model"] = st.session_state.get("llm_model")
+            if st.session_state.get("llm_api_key"):
+                headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+            response = requests.post("http://127.0.0.1:8000/upload_jd", params=params, headers=headers)
             if response.status_code == 200:
                 st.session_state.jd_data = response.json()["jd_data"]
                 st.session_state.step = 3
@@ -118,13 +304,21 @@ if st.session_state.step >= 3:
 
     if not st.session_state.evaluation_done:
         with st.spinner("⏳ Evaluating resumes... This may take a few minutes."):
+            headers = {}
+            if st.session_state.auth_token:
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            if st.session_state.get("llm_model"):
+                headers["X-Model"] = st.session_state.get("llm_model")
+            if st.session_state.get("llm_api_key"):
+                headers["X-Api-Key"] = st.session_state.get("llm_api_key")
             try:
                 response = requests.post(
                     "http://127.0.0.1:8000/evaluate_resumes",
                     json={
                         "uploaded_paths": st.session_state.uploaded_paths,
                         "jd_data": st.session_state.jd_data
-                    }
+                    },
+                    headers=headers
                 )
                 st.session_state.evaluation_response = response
                 st.session_state.evaluation_done = True
@@ -316,7 +510,14 @@ if st.session_state.step >= 4 and st.session_state.results:
 
     def export_to_backend(params):
         try:
-            response = requests.post("http://127.0.0.1:8000/export_resumes_excel", json=params)
+            headers = {}
+            if st.session_state.auth_token:
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            if st.session_state.get("llm_model"):
+                headers["X-Model"] = st.session_state.get("llm_model")
+            if st.session_state.get("llm_api_key"):
+                headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+            response = requests.post("http://127.0.0.1:8000/export_resumes_excel", json=params, headers=headers)
             if response.status_code == 200:
                 resp_json = response.json()
                 if resp_json.get("status") == "success" and "excel_file" in resp_json:
@@ -334,7 +535,7 @@ if st.session_state.step >= 4 and st.session_state.results:
         st.session_state.save_mode = "new_file"
         file_name_input = st.text_input("Enter Excel File Name", "resumes.xlsx")
         sheet_name_input = st.text_input("Enter Sheet Name", "Sheet1")
-        if st.button("Export New Excel"):
+        if st.button("Export New Excel", key="btn_export_new"):
             full_file_path = os.path.join(EXPORTS_DIR, file_name_input)
             params = {
                 "processed_resumes": st.session_state.results,
@@ -354,7 +555,7 @@ if st.session_state.step >= 4 and st.session_state.results:
                 full_file_path = os.path.join(EXPORTS_DIR, selected_file)
                 wb = load_workbook(full_file_path)
                 selected_sheet = st.selectbox("Select Existing Sheet", wb.sheetnames)
-                if st.button("Append to Sheet"):
+                if st.button("Append to Sheet", key="btn_append_sheet"):
                     params = {
                         "processed_resumes": st.session_state.results,
                         "mode": st.session_state.save_mode,
@@ -374,7 +575,7 @@ if st.session_state.step >= 4 and st.session_state.results:
             if selected_file:
                 full_file_path = os.path.join(EXPORTS_DIR, selected_file)
                 new_sheet_name = st.text_input("Enter New Sheet Name", "Sheet1")
-                if st.button("Create New Sheet"):
+                if st.button("Create New Sheet", key="btn_create_sheet"):
                     params = {
                         "processed_resumes": st.session_state.results,
                         "mode": st.session_state.save_mode,

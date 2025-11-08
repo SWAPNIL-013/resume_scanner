@@ -20,3 +20,6 @@ samples/
 
 # Environment Variables
 .env
+
+# Exports 
+exports/

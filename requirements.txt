@@ -16,3 +16,4 @@ dotenv
 pyjwt
 passlib[bcrypt]
 pyflakes
+pymongo

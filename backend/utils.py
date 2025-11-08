@@ -142,7 +142,7 @@ def format_experience_years(exp_float: float) -> str:
 
 
 
-# ----- LLM HELPER ------
+# LLM Helper 
 import os
 import json
 from dotenv import load_dotenv

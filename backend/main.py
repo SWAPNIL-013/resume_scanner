@@ -170,7 +170,73 @@ async def evaluate_resumes(
         "count": len(processed_resumes),
         "data": processed_resumes,
         "jd_mode": "enabled" if jd_json else "disabled"
-    }
+     }
+
+#from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# --------------------------
+# 3️⃣ Evaluate Resumes
+# --------------------------
+# @app.post("/evaluate_resumes")
+# async def evaluate_resumes(
+#     uploaded_paths: List[str] = Body(...),
+#     jd_data: dict = Body(None),
+#     authorization: str = Header(None),
+#     x_model: str = Header(None),
+#     x_api_key: str = Header(None)
+# ):
+#     # --- auth checks ---
+#     if not authorization:
+#         raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+#     token = authorization.split(" ")[-1]
+#     user = get_user_from_token(token)
+#     if not user:
+#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+#     processed_resumes = []
+
+#     model = x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash"
+#     api_key = x_api_key or (jd_data and jd_data.get("api_key"))
+
+#     # Generate JD JSON if needed
+#     jd_json = None
+#     if jd_data and jd_data.get("jd_text"):
+#         jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
+
+#     weights = jd_data.get("weights") if jd_data else None
+
+#     # -------------------------
+#     # 🔥 Run all resumes using threads
+#     # -------------------------
+#     with ThreadPoolExecutor(max_workers=4) as executor:
+#         futures = {
+#             executor.submit(
+#                 run_pipeline,
+#                 resume_file_path=path,
+#                 weights=weights,
+#                 jd_json=jd_json,
+#                 username=user.get("username"),
+#                 api_key=api_key,
+#                 model=model
+#             ): path
+#             for path in uploaded_paths
+#         }
+
+#         for future in as_completed(futures):
+#             try:
+#                 processed_resumes.append(future.result())
+#             except Exception as e:
+#                 processed_resumes.append({"error": str(e), "file": futures[future]})
+
+#     return {
+#         "status": "success",
+#         "count": len(processed_resumes),
+#         "data": processed_resumes,
+#         "jd_mode": "enabled" if jd_json else "disabled"
+#     }
+
+
 
 
 # --------------------------

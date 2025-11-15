@@ -206,6 +206,19 @@ with st.sidebar:
 
     api_key_input = st.text_input("Model API Key (optional)", type="password", key="_llm_api_key")
 
+    # threadpool max workers config
+    # st.subheader("Performance Settings")
+    # max_workers_input = st.number_input(
+    #     "Max Workers (parallel threads)",
+    #     min_value=1,
+    #     max_value=32,
+    #     value=4,     # default
+    #     step=1,
+    #     key="_max_workers_input"
+    # )
+    # st.session_state.max_workers = max_workers_input
+
+
     # persist choices in session state so other UI actions pick them up
     if model_value:
         st.session_state.llm_model = model_value
@@ -309,197 +322,25 @@ if st.session_state.step >= 1:
 # --------------------------
 # Step 2: Job Description & Weights
 # --------------------------
-# if st.session_state.step >= 2:
-#     st.header("Step 2: (Optional) Enter Job Description & Adjust Weights")
-
-#     example_jd = """Title: Data Scientist
-# Skills: Python, Machine Learning, SQL, Data Analysis
-# Education: B.Tech in IT
-# Experience: 2 years
-# Responsibilities: Build ML models, Analyze datasets
-# Certifications: AWS Machine Learning Foundations"""
-
-#     jd_text = st.text_area(
-#         "Paste Job Description here (optional — leave empty to skip)",
-#         value=st.session_state.jd_text or example_jd,
-#         height=200
-#     )
-#     st.session_state.jd_text = jd_text
-
-
-
-
-#     # ----------- Dynamic Field Extraction -----------
-#     import re
-
-#     def extract_fields_from_jd(jd_text):
-#         """Extract keys from JD lines like 'Skills:' or 'Experience:'"""
-#         fields = []
-#         for line in jd_text.splitlines():
-#             match = re.match(r"^\s*([A-Za-z_ ]+)\s*:", line)
-#             if match:
-#                 key = match.group(1).strip().lower().replace(" ", "_")
-#                 fields.append(key)
-#         return list(dict.fromkeys(fields))  # remove duplicates
-
-#     # Only extract fields if JD text is provided
-#     fields = extract_fields_from_jd(jd_text) if jd_text.strip() else []
-
-#     # remove unwanted fields like "title"
-#     fields = [f for f in fields if f.lower() != "title"]
-
-#     if not fields and jd_text.strip():
-#         st.info("No specific fields detected — default sliders will be used.")
-#         fields = ["skills", "experience", "education", "certifications"]
-
-#     if jd_text.strip():
-#         st.subheader("Weights (adjust using sliders)")
-#         weights = {}
-#         for field in fields:
-#             default_val = st.session_state.weights.get(field, 0.2) * 100  # convert to %
-#             weights[field] = st.slider(
-#                 f"{field.capitalize()} Weight (%)",
-#                 0, 100, int(default_val), 5,  # slider in percent (0–100)
-#                 key=f"w_{field}"
-#             )
-
-#         # Calculate total weight (in %)
-#         total = sum(weights.values())
-#         st.markdown(f"**Total Weight Sum:** `{total}%`")
-
-#         if total > 100:
-#             st.warning("⚠️ Total weight exceeds 100%. Please adjust sliders.")
-
-#         # Convert percentage values to decimals for backend
-#         weights = {k: round(v / 100, 2) for k, v in weights.items()}
-#         st.session_state.weights = weights
-#     else:
-#         st.session_state.weights = {}
-#         st.info("ℹ️ No JD entered — the system will only parse resumes (no scoring).")
-
-#     # --------------- Evaluate Button ---------------
-#     if st.button("Evaluate Resume(s)", key="btn_evaluate"):
-#         if not st.session_state.uploaded_paths:
-#             st.warning("Please upload at least one resume before proceeding.")
-#         else:
-#             headers = {}
-#             if st.session_state.auth_token:
-#                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-#             if st.session_state.get("llm_model"):
-#                 headers["X-Model"] = st.session_state.get("llm_model")
-#             if st.session_state.get("llm_api_key"):
-#                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
-
-#             if jd_text.strip():
-#                 # ✅ JD Mode — send JD and weights
-#                 payload = {
-#                     "jd_text": jd_text,
-#                     "weights": st.session_state.weights
-#                 }
-
-#                 response = requests.post(
-#                     "http://127.0.0.1:8000/upload_jd",
-#                     json=payload,
-#                     headers=headers
-#                 )
-
-#                 if response.status_code == 200:
-#                     st.session_state.jd_data = response.json().get("jd_data")
-#                     st.success("✅ JD uploaded successfully!")
-#                 else:
-#                     st.error(f"Failed to upload JD: {response.text}")
-#                     st.stop()
-#             else:
-#                 # ⚙️ No JD Mode
-#                 st.session_state.jd_data = None
-
-#             st.session_state.step = 3
-
-# # --------------------------
-# # Step 3: Evaluate Resumes
-# # --------------------------
-# if st.session_state.step >= 3:
-#     st.header("Step 3: Evaluating Resumes...")
-
-#     if not st.session_state.evaluation_done:
-#         with st.spinner("⏳ Evaluating resumes... This may take a few minutes."):
-#             headers = {}
-#             if st.session_state.auth_token:
-#                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-#             if st.session_state.get("llm_model"):
-#                 headers["X-Model"] = st.session_state.get("llm_model")
-#             if st.session_state.get("llm_api_key"):
-#                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
-
-#             payload = {
-#                 "uploaded_paths": st.session_state.uploaded_paths,
-#                 "jd_data": st.session_state.jd_data  # may be None
-#             }
-
-#             try:
-#                 response = requests.post(
-#                     "http://127.0.0.1:8000/evaluate_resumes",
-#                     json=payload,
-#                     headers=headers
-#                 )
-#                 st.session_state.evaluation_response = response
-#                 st.session_state.evaluation_done = True
-#             except Exception as e:
-#                 st.error(f"⚠️ Request failed: {e}")
-#                 st.stop()
-
-#     # Handle backend response
-#     response = st.session_state.evaluation_response
-#     if response.status_code == 200:
-#         result_json = response.json()
-#         st.session_state.results = result_json.get("data", [])
-#         jd_mode = result_json.get("jd_mode", "disabled")
-
-#         if jd_mode == "enabled":
-#             st.success("✅ Evaluation completed with JD scoring!")
-#         else:
-#             st.success("✅ Resume parsing completed (no JD provided).")
-
-#         st.session_state.step = 4
-#     else:
-#         st.error(f"❌ Evaluation failed: {response.text}")
-
-
 if st.session_state.step >= 2:
-    st.header("Step 2: Enter Job Description & Adjust Weights")
+    st.header("Step 2: (Optional) Enter Job Description & Adjust Weights")
 
-    example_jd = """Title: Software Engineer
-Experience: 2+ years
-Skills: Python, FastAPI, MongoDB, Streamlit
-Location: Remote
-Description: Build and maintain backend services for AI-powered systems.
-"""
+    example_jd = """Title: Data Scientist
+Skills: Python, Machine Learning, SQL, Data Analysis
+Education: B.Tech in IT
+Experience: 2 years
+Responsibilities: Build ML models, Analyze datasets
+Certifications: AWS Machine Learning Foundations"""
 
-    # ---------------- Instructions ----------------
-    st.markdown(
-        """
-        💡 **Tip:** Enter the Job Description in **key–value** format (each on a new line):  
-        ```
-        Title: Software Engineer
-        Skills: Python, FastAPI
-        Experience: 2 years
-        ```
-        Then click **Update JD** after editing.
-        """
-    )
-
-    # ---------------- JD Input ----------------
     jd_text = st.text_area(
-        "📝 Paste Job Description here (optional — leave empty to skip):",
-        value=st.session_state.get("jd_text", example_jd),
-        height=220,
-        key="jd_input"
+        "Paste Job Description here (optional — leave empty to skip)",
+        value=st.session_state.jd_text or example_jd,
+        height=200
     )
+    st.session_state.jd_text = jd_text
 
-    # ---- Update Button (replaces Ctrl+Enter) ----
-    if st.button("✅ Update JD"):
-        st.session_state.jd_text = jd_text
-        st.success("Job Description updated successfully!")
+
+
 
     # ----------- Dynamic Field Extraction -----------
     import re
@@ -514,34 +355,35 @@ Description: Build and maintain backend services for AI-powered systems.
                 fields.append(key)
         return list(dict.fromkeys(fields))  # remove duplicates
 
-    # Use the stored JD (updated only when button pressed)
-    current_jd = st.session_state.get("jd_text", "")
-    fields = extract_fields_from_jd(current_jd) if current_jd.strip() else []
+    # Only extract fields if JD text is provided
+    fields = extract_fields_from_jd(jd_text) if jd_text.strip() else []
 
     # remove unwanted fields like "title"
     fields = [f for f in fields if f.lower() != "title"]
 
-    if not fields and current_jd.strip():
+    if not fields and jd_text.strip():
         st.info("No specific fields detected — default sliders will be used.")
         fields = ["skills", "experience", "education", "certifications"]
 
-    if current_jd.strip():
+    if jd_text.strip():
         st.subheader("Weights (adjust using sliders)")
         weights = {}
         for field in fields:
             default_val = st.session_state.weights.get(field, 0.2) * 100  # convert to %
             weights[field] = st.slider(
                 f"{field.capitalize()} Weight (%)",
-                0, 100, int(default_val), 5,
+                0, 100, int(default_val), 5,  # slider in percent (0–100)
                 key=f"w_{field}"
             )
 
+        # Calculate total weight (in %)
         total = sum(weights.values())
         st.markdown(f"**Total Weight Sum:** `{total}%`")
 
         if total > 100:
             st.warning("⚠️ Total weight exceeds 100%. Please adjust sliders.")
 
+        # Convert percentage values to decimals for backend
         weights = {k: round(v / 100, 2) for k, v in weights.items()}
         st.session_state.weights = weights
     else:
@@ -561,10 +403,10 @@ Description: Build and maintain backend services for AI-powered systems.
             if st.session_state.get("llm_api_key"):
                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
 
-            if current_jd.strip():
+            if jd_text.strip():
                 # ✅ JD Mode — send JD and weights
                 payload = {
-                    "jd_text": current_jd,
+                    "jd_text": jd_text,
                     "weights": st.session_state.weights
                 }
 
@@ -581,9 +423,181 @@ Description: Build and maintain backend services for AI-powered systems.
                     st.error(f"Failed to upload JD: {response.text}")
                     st.stop()
             else:
+                # ⚙️ No JD Mode
                 st.session_state.jd_data = None
 
             st.session_state.step = 3
+
+# --------------------------
+# Step 3: Evaluate Resumes
+# --------------------------
+if st.session_state.step >= 3:
+    st.header("Step 3: Evaluating Resumes...")
+
+    if not st.session_state.evaluation_done:
+        with st.spinner("⏳ Evaluating resumes... This may take a few minutes."):
+            headers = {}
+            if st.session_state.auth_token:
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            if st.session_state.get("llm_model"):
+                headers["X-Model"] = st.session_state.get("llm_model")
+            if st.session_state.get("llm_api_key"):
+                headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+
+            payload = {
+                "uploaded_paths": st.session_state.uploaded_paths,
+                "jd_data": st.session_state.jd_data  # may be None
+            }
+
+            try:
+                response = requests.post(
+                    "http://127.0.0.1:8000/evaluate_resumes",
+                    json=payload,
+                    headers=headers
+                )
+                st.session_state.evaluation_response = response
+                st.session_state.evaluation_done = True
+            except Exception as e:
+                st.error(f"⚠️ Request failed: {e}")
+                st.stop()
+
+    # Handle backend response
+    response = st.session_state.evaluation_response
+    if response.status_code == 200:
+        result_json = response.json()
+        st.session_state.results = result_json.get("data", [])
+        jd_mode = result_json.get("jd_mode", "disabled")
+
+        if jd_mode == "enabled":
+            st.success("✅ Evaluation completed with JD scoring!")
+        else:
+            st.success("✅ Resume parsing completed (no JD provided).")
+
+        st.session_state.step = 4
+    else:
+        st.error(f"❌ Evaluation failed: {response.text}")
+
+
+# if st.session_state.step >= 2:
+#     st.header("Step 2: Enter Job Description & Adjust Weights")
+
+#     example_jd = """Title: Software Engineer
+# Experience: 2+ years
+# Skills: Python, FastAPI, MongoDB, Streamlit
+# Location: Remote
+# Description: Build and maintain backend services for AI-powered systems.
+# """
+
+#     # ---------------- Instructions ----------------
+#     st.markdown(
+#         """
+#         💡 **Tip:** Enter the Job Description in **key–value** format (each on a new line):  
+#         ```
+#         Title: Software Engineer
+#         Skills: Python, FastAPI
+#         Experience: 2 years
+#         ```
+#         Then click **Update JD** after editing.
+#         """
+#     )
+
+#     # ---------------- JD Input ----------------
+#     jd_text = st.text_area(
+#         "📝 Paste Job Description here (optional — leave empty to skip):",
+#         value=st.session_state.get("jd_text", example_jd),
+#         height=220,
+#         key="jd_input"
+#     )
+
+#     # ---- Update Button (replaces Ctrl+Enter) ----
+#     if st.button("✅ Update JD"):
+#         st.session_state.jd_text = jd_text
+#         st.success("Job Description updated successfully!")
+
+#     # ----------- Dynamic Field Extraction -----------
+#     import re
+
+#     def extract_fields_from_jd(jd_text):
+#         """Extract keys from JD lines like 'Skills:' or 'Experience:'"""
+#         fields = []
+#         for line in jd_text.splitlines():
+#             match = re.match(r"^\s*([A-Za-z_ ]+)\s*:", line)
+#             if match:
+#                 key = match.group(1).strip().lower().replace(" ", "_")
+#                 fields.append(key)
+#         return list(dict.fromkeys(fields))  # remove duplicates
+
+#     # Use the stored JD (updated only when button pressed)
+#     current_jd = st.session_state.get("jd_text", "")
+#     fields = extract_fields_from_jd(current_jd) if current_jd.strip() else []
+
+#     # remove unwanted fields like "title"
+#     fields = [f for f in fields if f.lower() != "title"]
+
+#     if not fields and current_jd.strip():
+#         st.info("No specific fields detected — default sliders will be used.")
+#         fields = ["skills", "experience", "education", "certifications"]
+
+#     if current_jd.strip():
+#         st.subheader("Weights (adjust using sliders)")
+#         weights = {}
+#         for field in fields:
+#             default_val = st.session_state.weights.get(field, 0.2) * 100  # convert to %
+#             weights[field] = st.slider(
+#                 f"{field.capitalize()} Weight (%)",
+#                 0, 100, int(default_val), 5,
+#                 key=f"w_{field}"
+#             )
+
+#         total = sum(weights.values())
+#         st.markdown(f"**Total Weight Sum:** `{total}%`")
+
+#         if total > 100:
+#             st.warning("⚠️ Total weight exceeds 100%. Please adjust sliders.")
+
+#         weights = {k: round(v / 100, 2) for k, v in weights.items()}
+#         st.session_state.weights = weights
+#     else:
+#         st.session_state.weights = {}
+#         st.info("ℹ️ No JD entered — the system will only parse resumes (no scoring).")
+
+#     # --------------- Evaluate Button ---------------
+#     if st.button("Evaluate Resume(s)", key="btn_evaluate"):
+#         if not st.session_state.uploaded_paths:
+#             st.warning("Please upload at least one resume before proceeding.")
+#         else:
+#             headers = {}
+#             if st.session_state.auth_token:
+#                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+#             if st.session_state.get("llm_model"):
+#                 headers["X-Model"] = st.session_state.get("llm_model")
+#             if st.session_state.get("llm_api_key"):
+#                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+
+#             if current_jd.strip():
+#                 # ✅ JD Mode — send JD and weights
+#                 payload = {
+#                     "jd_text": current_jd,
+#                     "weights": st.session_state.weights
+#                 }
+
+#                 response = requests.post(
+#                     "http://127.0.0.1:8000/upload_jd",
+#                     json=payload,
+#                     headers=headers
+#                 )
+
+#                 if response.status_code == 200:
+#                     st.session_state.jd_data = response.json().get("jd_data")
+#                     st.success("✅ JD uploaded successfully!")
+#                 else:
+#                     st.error(f"Failed to upload JD: {response.text}")
+#                     st.stop()
+#             else:
+#                 st.session_state.jd_data = None
+
+#             st.session_state.step = 3
+
 
 
 

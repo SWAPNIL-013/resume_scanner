@@ -1,12 +1,7 @@
 import os
 import json
-from dotenv import load_dotenv
-from google import genai
 from jd_schema import JobDescriptionSchema
 from utils import call_llm
-
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def generate_jd_json(jd_text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> dict:
     """

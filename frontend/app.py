@@ -218,7 +218,7 @@ with st.sidebar:
     # --------------------------
     st.subheader("System Settings")
     max_workers = st.slider(
-        "Parallel Resume Processing (max workers)",
+        "Parallel Resume Processing (recommended 4 due to API rate limits)",
         min_value=1,
         max_value=10,
         value=4,  # Default

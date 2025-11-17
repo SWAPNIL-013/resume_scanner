@@ -140,16 +140,43 @@ def format_experience_years(exp_float: float) -> str:
         parts.append(f"{months} mo{'s' if months > 1 else ''}")
     return " ".join(parts)
 
+# ----------------------------------------------------------
+# Helper: Validate resume JSON
+# ----------------------------------------------------------
+def validate_resume_json(resume_json: dict, filename: str):
+    if not isinstance(resume_json, dict):
+        return "Resume JSON generation failed: LLM returned non-dict"
+
+    # Mandatory fields (experience removed — freshers won't have it)
+    required_keys = ["name", "skills"]
+    missing = [k for k in required_keys if k not in resume_json]
+    if missing:
+        return f"Resume JSON missing keys: {missing}"
+
+    # Validate name
+    name = resume_json.get("name")
+    if not isinstance(name, str) or len(name.strip()) == 0:
+        return "Resume JSON missing or invalid 'name' field"
+
+    # Reject if LLM puts headings instead of name
+    bad_keywords = ["experience", "skills", "summary", "qualification"]
+    if any(bk in name.lower() for bk in bad_keywords):
+        return "Invalid 'name' — LLM hallucinated a section heading"
+
+    # Name length — relaxed
+    if len(name) > 150:
+        return "Invalid 'name' — too long or hallucinated"
+
+    return None  # No issues
 
 
 # LLM Helper 
 import os
 import json
 from dotenv import load_dotenv
-# Load env once
-load_dotenv()
-
 from google import genai
+import time
+import random
 
 # Load env once
 load_dotenv()
@@ -174,8 +201,6 @@ def call_llm(prompt: str, model: str = "gemini-2.5-flash", *, api_key: str = Non
     Callers should check for the presence of the top-level "error" key.
     """
 
-    import time
-    import random
 
     def _strip_markdown(s: str) -> str:
         s = s.strip()
@@ -205,6 +230,11 @@ def call_llm(prompt: str, model: str = "gemini-2.5-flash", *, api_key: str = Non
             )
 
             raw_output = _strip_markdown(response.text)
+            raw_output = raw_output.replace("\\n", "\n")  # Convert literal backslash-n to real newline
+            raw_output = raw_output.replace("\n", " ")    # Then convert all real newlines to spaces (optional)
+            import re
+            raw_output = re.sub(r"\s+", " ", raw_output).strip()
+
 
             # If the SDK surfaces an error structure, try to detect it
             # e.g., some clients may include status/code in attributes

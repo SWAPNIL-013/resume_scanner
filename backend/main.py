@@ -5,12 +5,17 @@ from auth import register_user, authenticate_user, create_access_token, get_user
 from pipeline import run_pipeline
 from exporter import export_to_excel, get_new_excel_name, EXPORTS_DIR
 from jd_llm import generate_jd_json
+from mongo_exporter import export_to_mongo
 import tempfile
 import shutil
 from fastapi.responses import JSONResponse
 import base64
 import os
-from mongo_exporter import export_to_mongo
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+
 
 app = FastAPI()
 
@@ -110,124 +115,140 @@ async def upload_jd(
     return {"status": "success", "jd_data": jd_data}
 
 
-
-
-# --------------------------
-# 3️⃣ Evaluate Resumes
-# --------------------------
-@app.post("/evaluate_resumes")
-async def evaluate_resumes(
-    uploaded_paths: List[str] = Body(..., description="List of uploaded resume file paths"),
-    jd_data: dict = Body(None, description="JD text and weights (optional)"),
-    authorization: str = Header(None),
-    x_model: str = Header(None),
-    x_api_key: str = Header(None)
-):
-    if not authorization:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
-    token = authorization.split(" ")[-1]
-    user = get_user_from_token(token)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
-    processed_resumes = []
-
-    # ✅ Setup model and API key
-    model = (x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash")
-    api_key = (x_api_key or (jd_data and jd_data.get("api_key")))
-
-    # ✅ JD JSON (optional)
-    jd_json = None
-    if jd_data and "jd_text" in jd_data and jd_data["jd_text"].strip():
-        print("Generating JD JSON...")
-        jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
-        print(f"JD JSON is :\n{jd_json}\nEvaluating Resumes...\n ")
-    else:
-        print("⚙️ No JD provided — running resume parsing only mode.\n")
-
-    # ✅ Process each resume
-    for path in uploaded_paths:
-        try:
-            print(f"Processing: {path}")
-            resume_dict = run_pipeline(
-                resume_file_path=path,
-                weights=(jd_data.get("weights") if jd_data else None),
-                jd_json=jd_json,  # may be None
-                username=user.get("username"),
-                api_key=api_key,
-                model=model
-            )
-            processed_resumes.append(resume_dict)
-        except Exception as e:
-            print(f"⚠️ Failed to process {path}: {e}")
-            continue
-
-    if not processed_resumes:
-        return {"status": "error", "message": "No valid resumes to process."}
-
-    return {
-        "status": "success",
-        "count": len(processed_resumes),
-        "data": processed_resumes,
-        "jd_mode": "enabled" if jd_json else "disabled"
-     }
-
-#from concurrent.futures import ThreadPoolExecutor, as_completed
-
-# --------------------------
-# 3️⃣ Evaluate Resumes
-# --------------------------
+# # --------------------------
+# # 3️⃣ Evaluate Resumes
+# # --------------------------
 # @app.post("/evaluate_resumes")
 # async def evaluate_resumes(
-#     uploaded_paths: List[str] = Body(...),
-#     jd_data: dict = Body(None),
+#     uploaded_paths: List[str] = Body(..., description="List of uploaded resume file paths"),
+#     jd_data: dict = Body(None, description="JD text and weights (optional)"),
 #     authorization: str = Header(None),
 #     x_model: str = Header(None),
 #     x_api_key: str = Header(None)
 # ):
-#     # --- auth checks ---
 #     if not authorization:
-#         raise HTTPException(status_code=401, detail="Missing Authorization header")
-
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
 #     token = authorization.split(" ")[-1]
 #     user = get_user_from_token(token)
 #     if not user:
-#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 #     processed_resumes = []
 
-#     model = x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash"
-#     api_key = x_api_key or (jd_data and jd_data.get("api_key"))
+#     # ✅ Setup model and API key
+#     model = (x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash")
+#     api_key = (x_api_key or (jd_data and jd_data.get("api_key")))
 
-#     # Generate JD JSON if needed
+#     # ✅ JD JSON (optional)
 #     jd_json = None
-#     if jd_data and jd_data.get("jd_text"):
+#     if jd_data and "jd_text" in jd_data and jd_data["jd_text"].strip():
+#         print("Generating JD JSON...")
 #         jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
+#         print(f"JD JSON is :\n{jd_json}\nEvaluating Resumes...\n ")
+#     else:
+#         print("⚙️ No JD provided — running resume parsing only mode.\n")
 
-#     weights = jd_data.get("weights") if jd_data else None
-
-#     # -------------------------
-#     # 🔥 Run all resumes using threads
-#     # -------------------------
-#     with ThreadPoolExecutor(max_workers=4) as executor:
-#         futures = {
-#             executor.submit(
-#                 run_pipeline,
+#     # ✅ Process each resume
+#     for path in uploaded_paths:
+#         try:
+#             print(f"Processing: {path}")
+#             resume_dict = run_pipeline(
 #                 resume_file_path=path,
-#                 weights=weights,
-#                 jd_json=jd_json,
+#                 weights=(jd_data.get("weights") if jd_data else None),
+#                 jd_json=jd_json,  # may be None
 #                 username=user.get("username"),
 #                 api_key=api_key,
 #                 model=model
-#             ): path
-#             for path in uploaded_paths
-#         }
+#             )
+#             processed_resumes.append(resume_dict)
+#         except Exception as e:
+#             print(f"⚠️ Failed to process {path}: {e}")
+#             continue
 
-#         for future in as_completed(futures):
+#     if not processed_resumes:
+#         return {"status": "error", "message": "No valid resumes to process."}
+
+#     return {
+#         "status": "success",
+#         "count": len(processed_resumes),
+#         "data": processed_resumes,
+#         "jd_mode": "enabled" if jd_json else "disabled"
+#      }
+
+
+
+# # # --------------------------
+# # # 3️⃣ Evaluate Resumes
+# # # --------------------------
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s [%(threadName)s-%(thread)d] %(levelname)s: %(message)s',
+# )
+# logger = logging.getLogger(__name__)
+
+
+# @app.post("/evaluate_resumes")
+# async def evaluate_resumes(
+#     uploaded_paths: List[str] = Body(...),
+#     jd_data: dict = Body(None),
+#     max_workers: int = Body(4),
+#     authorization: str = Header(None),
+#     x_model: str = Header(None),
+#     x_api_key: str = Header(None)
+# ):
+#     if not authorization:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+
+#     token = authorization.split(" ")[-1]
+#     user = get_user_from_token(token)
+
+#     if not user:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    
+#     logger.info(f"Max workers received from UI: {max_workers}")
+
+#     model = (x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash")
+#     api_key = (x_api_key or (jd_data and jd_data.get("api_key")))
+
+#     jd_json = None
+#     if jd_data and "jd_text" in jd_data and jd_data["jd_text"].strip():
+#         jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
+
+#     executor = ThreadPoolExecutor(max_workers=max_workers)
+#     logger.info(f"Executor created with max_workers = {max_workers}")
+#     loop = asyncio.get_running_loop()
+
+#     async def process_resume(path):
+#         def wrapper():
+#             thread_name = threading.current_thread().name
+#             thread_id = threading.get_ident()
+#             logger.info(f"Started: {path} on {thread_name}-{thread_id}")
 #             try:
-#                 processed_resumes.append(future.result())
+#                 result = run_pipeline(
+#                     resume_file_path=path,
+#                     weights=jd_data.get("weights") if jd_data else None,
+#                     jd_json=jd_json,
+#                     username=user.get("username"),
+#                     api_key=api_key,
+#                     model=model
+#                 )
 #             except Exception as e:
-#                 processed_resumes.append({"error": str(e), "file": futures[future]})
+#                 logger.error(f"Error processing {path}: {e}")
+#                 return None
+#             logger.info(f"Finished: {path} on {thread_name}-{thread_id}")
+#             return result
+
+#         return await loop.run_in_executor(executor, wrapper)
+
+#     tasks = [process_resume(path) for path in uploaded_paths]
+#     results = await asyncio.gather(*tasks)
+
+#     processed_resumes = [r for r in results if r is not None]
+
+#     executor.shutdown(wait=True)
+
+#     if not processed_resumes:
+#         return {"status": "error", "message": "No valid resumes processed."}
 
 #     return {
 #         "status": "success",
@@ -235,6 +256,102 @@ async def evaluate_resumes(
 #         "data": processed_resumes,
 #         "jd_mode": "enabled" if jd_json else "disabled"
 #     }
+
+
+
+# --------------------------
+# 3️⃣ Evaluate Resumes
+# --------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(threadName)s-%(thread)d] %(levelname)s: %(message)s',
+)
+logger = logging.getLogger(__name__)
+
+@app.post("/evaluate_resumes")
+async def evaluate_resumes(
+    uploaded_paths: List[str] = Body(...),
+    jd_data: dict = Body(None),
+    max_workers: int = Body(4),
+    authorization: str = Header(None),
+    x_model: str = Header(None),
+    x_api_key: str = Header(None)
+):
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+
+    token = authorization.split(" ")[-1]
+    user = get_user_from_token(token)
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    
+    logger.info(f"Max workers received from UI: {max_workers}")
+
+    model = (x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash")
+    api_key = (x_api_key or (jd_data and jd_data.get("api_key")))
+
+    jd_json = None
+    if jd_data and "jd_text" in jd_data and jd_data["jd_text"].strip():
+        jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
+
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    loop = asyncio.get_running_loop()
+
+    async def process_resume(path):
+
+        def wrapper():
+            thread_name = threading.current_thread().name
+            thread_id = threading.get_ident()
+            logger.info(f"Started: {path} on {thread_name}-{thread_id}")
+
+            try:
+                result = run_pipeline(
+                    resume_file_path=path,
+                    weights=jd_data.get("weights") if jd_data else None,
+                    jd_json=jd_json,
+                    username=user.get("username"),
+                    api_key=api_key,
+                    model=model
+                )
+            except Exception as e:
+                logger.error(f"Error processing {path}: {e}")
+                return {
+                    "status": "failed",
+                    "error": str(e),
+                    "file": os.path.basename(path),
+                    
+                }
+
+            logger.info(f"Finished: {path} on {thread_name}-{thread_id}")
+            return result
+
+        return await loop.run_in_executor(executor, wrapper)
+
+    # Run everything in parallel
+    tasks = [process_resume(path) for path in uploaded_paths]
+    results = await asyncio.gather(*tasks)
+
+    executor.shutdown(wait=True)
+
+    # Separate success/failure
+    success_items = [r for r in results if r and r.get("status") == "success"]
+    failed_items  = [r for r in results if r and r.get("status") == "failed"]
+
+    final_status = "success" if len(success_items) > 0 else "failed"
+
+    return {
+        "status": final_status,
+        "total": len(uploaded_paths),
+        "success_count": len(success_items),
+        "failed_count": len(failed_items),
+        "data": results,              # both success + failed (uniform JSON like pipeline)
+        "jd_mode": "enabled" if jd_json else "disabled"
+    }
+
+
+
+
 
 
 
@@ -293,63 +410,6 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
     except Exception as e:
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
-# @app.post("/export_resumes_excel")
-# async def export_resumes_excel(
-#     req: ExportRequest,
-#     authorization: str = Header(None),
-#     x_model: str = Header(None),
-#     x_api_key: str = Header(None)
-# ):
-#     if not authorization:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Missing Authorization header"
-#         )
-#     token = authorization.split(" ")[-1]
-#     user = get_user_from_token(token)
-#     if not user:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Invalid or expired token"
-#         )
-
-#     try:
-#         # ✅ Always use the main exports directory (no per-user subfolder)
-#         os.makedirs(EXPORTS_DIR, exist_ok=True)
-
-#         # Handle file path
-#         if req.file_path:
-#             req.file_path = os.path.join(EXPORTS_DIR, os.path.basename(req.file_path))
-#         else:
-#             req.file_path = get_new_excel_name(base_dir=EXPORTS_DIR)
-
-#         # Export to Excel
-#         df = export_to_excel(
-#             resume_list=req.processed_resumes,
-#             mode=req.mode,
-#             file_path=req.file_path,
-#             sheet_name=req.sheet_name,
-#             base_dir=EXPORTS_DIR
-#         )
-
-#         # Prepare response
-#         with open(req.file_path, "rb") as f:
-#             excel_bytes = f.read()
-#             excel_b64 = base64.b64encode(excel_bytes).decode("utf-8")
-
-#         return {
-#             "status": "success",
-#             "count": len(req.processed_resumes),
-#             "excel_file": excel_b64,
-#             "saved_path": req.file_path
-#         }
-
-#     except FileNotFoundError as e:
-#         return {"status": "error", "message": str(e)}
-#     except ValueError as e:
-#         return {"status": "error", "message": str(e)}
-#     except Exception as e:
-#         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
 
 # --------------------------

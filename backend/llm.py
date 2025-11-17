@@ -78,36 +78,46 @@ def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini
     return resume_dict
 
 
-# ----------------- Test Runner -----------------
+# ----------------- Test Runner for Multiple Resumes -----------------
 if __name__ == "__main__":
     import json
     from parser import extract_text_and_links  # your parser
     from utils import total_experience_from_resume
 
-    resume_file = "samples/Naukri_Mr.IMRANSHARIFFHS[3y_8m].pdf"
+    resume_files = [
+        "samples/hemalata.pdf",
+     
+    ]
 
-    # Extract text + links
-    resume_text, resume_links = extract_text_and_links(resume_file)
+    for resume_file in resume_files:
+        print(f"\n\n========== Processing Resume: {resume_file} ==========")
 
-    print("----- Extracted Resume Text (first 500 chars) -----")
-    print(resume_text[:500])
+        try:
+            # Extract text + links
+            resume_text, resume_links = extract_text_and_links(resume_file)
 
-    print("\n----- Extracted Links -----")
-    if resume_links:
-        for link in resume_links:
-            print(link)
-    else:
-        print("No links found")
+            print("----- Extracted Resume Text (first 500 chars) -----")
+            print(resume_text[:500])
 
-    print("\n------- Running LLM to extract structured JSON ----------")
-    resume_text_with_links = resume_text + "\n\nLinks found: " + ", ".join(resume_links)
+            print("\n----- Extracted Links -----")
+            if resume_links:
+                for link in resume_links:
+                    print(link)
+            else:
+                print("No links found")
 
-    # Run LLM parser
-    resume_dict = generate_resume_json(resume_text_with_links)
+            print("\n------- Running LLM to extract structured JSON ----------")
+            resume_text_with_links = resume_text + "\n\nLinks found: " + ", ".join(resume_links)
 
-    print("\n----- Parsed Resume JSON -----")
-    print(json.dumps(resume_dict, indent=2))
+            # Run LLM parser
+            resume_dict = generate_resume_json(resume_text_with_links)
 
-    # --- Calculate total experience ---
-    total_exp_years = total_experience_from_resume(resume_dict.get("experience", []))
-    print(f"\n----- Total Experience (years) -----\n{total_exp_years:.2f} years")
+            print("\n----- Parsed Resume JSON -----")
+            print(json.dumps(resume_dict, indent=2))
+
+            # --- Calculate total experience ---
+            total_exp_years = total_experience_from_resume(resume_dict.get("experience", []))
+            print(f"\n----- Total Experience (years) -----\n{total_exp_years:.2f} years")
+
+        except Exception as e:
+            print(f"❌ Failed processing {resume_file}: {e}")

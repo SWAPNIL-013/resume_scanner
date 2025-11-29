@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 import base64
 import os
 from mongo_exporter import export_to_mongo
+from pipeline import run_pipeline_db
+
 
 app = FastAPI()
 
@@ -172,69 +174,49 @@ async def evaluate_resumes(
         "jd_mode": "enabled" if jd_json else "disabled"
      }
 
-#from concurrent.futures import ThreadPoolExecutor, as_completed
+@app.post("/evaluate_resumes_db")
+async def evaluate_resumes_db(
+    mongo_uri: str = Body(...),
+    db_name: str = Body(...),
+    collection_name: str = Body(...),
+    jd_data: dict = Body(None),
+    authorization: str = Header(None),
+    x_model: str = Header(None),
+    x_api_key: str = Header(None),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    token = authorization.split(" ")[-1]
+    user = get_user_from_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-# --------------------------
-# 3️⃣ Evaluate Resumes
-# --------------------------
-# @app.post("/evaluate_resumes")
-# async def evaluate_resumes(
-#     uploaded_paths: List[str] = Body(...),
-#     jd_data: dict = Body(None),
-#     authorization: str = Header(None),
-#     x_model: str = Header(None),
-#     x_api_key: str = Header(None)
-# ):
-#     # --- auth checks ---
-#     if not authorization:
-#         raise HTTPException(status_code=401, detail="Missing Authorization header")
+    model = x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash"
+    api_key = x_api_key or (jd_data and jd_data.get("api_key"))
 
-#     token = authorization.split(" ")[-1]
-#     user = get_user_from_token(token)
-#     if not user:
-#         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    try:
+        processed_resumes = run_pipeline_db(
+            mongo_uri=mongo_uri,
+            db_name=db_name,
+            collection_name=collection_name,
+            weights=jd_data.get("weights") if jd_data else None,
+            jd_text=jd_data.get("jd_text") if jd_data else None,  # Pass jd_text here
+            username=user.get("username"),
+            api_key=api_key,
+            model=model,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
 
-#     processed_resumes = []
+    if not processed_resumes:
+        return {"status": "error", "message": "No valid resumes to process."}
 
-#     model = x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash"
-#     api_key = x_api_key or (jd_data and jd_data.get("api_key"))
-
-#     # Generate JD JSON if needed
-#     jd_json = None
-#     if jd_data and jd_data.get("jd_text"):
-#         jd_json = generate_jd_json(jd_data["jd_text"], api_key=api_key, model=model)
-
-#     weights = jd_data.get("weights") if jd_data else None
-
-#     # -------------------------
-#     # 🔥 Run all resumes using threads
-#     # -------------------------
-#     with ThreadPoolExecutor(max_workers=4) as executor:
-#         futures = {
-#             executor.submit(
-#                 run_pipeline,
-#                 resume_file_path=path,
-#                 weights=weights,
-#                 jd_json=jd_json,
-#                 username=user.get("username"),
-#                 api_key=api_key,
-#                 model=model
-#             ): path
-#             for path in uploaded_paths
-#         }
-
-#         for future in as_completed(futures):
-#             try:
-#                 processed_resumes.append(future.result())
-#             except Exception as e:
-#                 processed_resumes.append({"error": str(e), "file": futures[future]})
-
-#     return {
-#         "status": "success",
-#         "count": len(processed_resumes),
-#         "data": processed_resumes,
-#         "jd_mode": "enabled" if jd_json else "disabled"
-#     }
+    return {
+        "status": "success",
+        "count": len(processed_resumes),
+        "data": processed_resumes,
+        "jd_mode": "enabled" if jd_data and jd_data.get("jd_text") else "disabled",
+    }
 
 
 
@@ -293,63 +275,6 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
     except Exception as e:
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
-# @app.post("/export_resumes_excel")
-# async def export_resumes_excel(
-#     req: ExportRequest,
-#     authorization: str = Header(None),
-#     x_model: str = Header(None),
-#     x_api_key: str = Header(None)
-# ):
-#     if not authorization:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Missing Authorization header"
-#         )
-#     token = authorization.split(" ")[-1]
-#     user = get_user_from_token(token)
-#     if not user:
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Invalid or expired token"
-#         )
-
-#     try:
-#         # ✅ Always use the main exports directory (no per-user subfolder)
-#         os.makedirs(EXPORTS_DIR, exist_ok=True)
-
-#         # Handle file path
-#         if req.file_path:
-#             req.file_path = os.path.join(EXPORTS_DIR, os.path.basename(req.file_path))
-#         else:
-#             req.file_path = get_new_excel_name(base_dir=EXPORTS_DIR)
-
-#         # Export to Excel
-#         df = export_to_excel(
-#             resume_list=req.processed_resumes,
-#             mode=req.mode,
-#             file_path=req.file_path,
-#             sheet_name=req.sheet_name,
-#             base_dir=EXPORTS_DIR
-#         )
-
-#         # Prepare response
-#         with open(req.file_path, "rb") as f:
-#             excel_bytes = f.read()
-#             excel_b64 = base64.b64encode(excel_bytes).decode("utf-8")
-
-#         return {
-#             "status": "success",
-#             "count": len(req.processed_resumes),
-#             "excel_file": excel_b64,
-#             "saved_path": req.file_path
-#         }
-
-#     except FileNotFoundError as e:
-#         return {"status": "error", "message": str(e)}
-#     except ValueError as e:
-#         return {"status": "error", "message": str(e)}
-#     except Exception as e:
-#         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
 
 
 # --------------------------

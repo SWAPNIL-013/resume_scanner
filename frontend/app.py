@@ -56,7 +56,6 @@ def get_user_exports_dir():
     else:
         os.makedirs(base_dir, exist_ok=True)
         return base_dir
-
 EXPORTS_DIR = get_user_exports_dir()
 
 
@@ -105,7 +104,8 @@ if "save_mode" not in st.session_state:
 if "show_auth" not in st.session_state:
     # When True, the sidebar shows the login/register form. Clear after login.
     st.session_state.show_auth = True
-
+if "last_export_option" not in st.session_state:
+    st.session_state.last_export_option = None
 
 def safe_rerun():
     """Try to trigger a Streamlit rerun in a backwards/forwards-compatible way.
@@ -329,7 +329,6 @@ if st.session_state.step >= 1:
 # --------------------------
 # STEP 2: JD & WEIGHTS (Professional UI)
 # --------------------------
-
 if st.session_state.step >= 2:
 
     st.markdown("## **Step 2 — Job Description & Weights**")
@@ -502,9 +501,6 @@ Description: Build and maintain backend services for AI-powered systems.
             st.session_state.step = 3
 
 
-
-
-
 # --------------------------
 # Step 3: Evaluate Resumes
 # --------------------------
@@ -563,14 +559,9 @@ if st.session_state.step >= 3:
         st.error(f"❌ Evaluation failed: {response.text}")
 
 
-
-
-
-
 # --------------------------
 # Step 4: Display Results
 # --------------------------
-
 if st.session_state.step >= 4 and st.session_state.results:
     st.header("Step 4: Evaluation Results")
 
@@ -704,7 +695,7 @@ if st.session_state.step >= 4 and st.session_state.results:
             )
 
             # Overall Score
-            score = resume.get("score", "N/A")
+            score = resume.get("score", "Score is not calculated - No JD present")
             st.markdown(
                 f"<span style='display:inline-block;background:#e8f5e9;color:#1b5e20;"
                 f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
@@ -735,15 +726,12 @@ if st.session_state.step >= 4 and st.session_state.results:
                 st.markdown(breakdown_cards, unsafe_allow_html=True)
 
 
-
 # --------------------------
 # Step 5: Export Options
 # --------------------------
-
 if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
     st.markdown("## Step 5 — Export Options")
     
-
     success_items = [r for r in st.session_state.results if r.get("status") == "success"]
 
     if not success_items:
@@ -761,7 +749,20 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
         ),
     )
 
-    # Utility
+    # --- Clear excel_file when switching export modes to avoid stale download button ---
+    excel_export_modes = [
+        "Create New Excel File",
+        "Append to Existing Sheet",
+        "Create New Sheet in Existing File",
+    ]
+
+    if st.session_state.last_export_option != export_option:
+        if export_option not in excel_export_modes:
+            st.session_state.excel_file = None
+        st.session_state.last_export_option = export_option
+
+
+    # Utility function
     def export_to_backend(params):
         try:
             headers = {}
@@ -783,7 +784,7 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
 
             if response.status_code == 200 and resp_json.get("status") == "success":
                 st.session_state.excel_file = resp_json
-                st.success("Export successful!")
+                st.success("✅ Export successful!")
             else:
                 st.warning(f"Export failed: {resp_json.get('message', 'Unknown error')}")
 
@@ -805,17 +806,13 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
         with col2:
             sheet_name = st.text_input("Sheet Name", "Sheet1")
 
-        st.button(
-            "Export New Excel File",
-            use_container_width=True,
-            key="btn_export_new",
-            on_click=lambda: export_to_backend({
+        if st.button("Export New Excel File", key="btn_export_new"):
+            export_to_backend({
                 "processed_resumes": success_items,
                 "mode": "new_file",
                 "file_path": os.path.join(EXPORTS_DIR, file_name),
                 "sheet_name": sheet_name,
-            }),
-        )
+            })
 
 
     # 2️⃣ APPEND TO EXISTING SHEET
@@ -829,17 +826,13 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
             wb = load_workbook(os.path.join(EXPORTS_DIR, selected_file))
             selected_sheet = st.selectbox("Select Sheet", wb.sheetnames)
 
-            st.button(
-                "Append to Sheet",
-                use_container_width=True,
-                key="btn_append",
-                on_click=lambda: export_to_backend({
+            if st.button("Append to Sheet", key="btn_append"):
+                export_to_backend({
                     "processed_resumes": success_items,
                     "mode": "append_sheet",
                     "file_path": os.path.join(EXPORTS_DIR, selected_file),
                     "sheet_name": selected_sheet,
-                }),
-            )
+                })
 
 
     # 3️⃣ NEW SHEET IN EXISTING FILE
@@ -852,19 +845,16 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
             selected_file = st.selectbox("Select Excel File", excel_files)
             new_sheet = st.text_input("New Sheet Name", "Sheet1")
 
-            st.button(
-                "Create New Sheet",
-                use_container_width=True,
-                key="btn_create_sheet",
-                on_click=lambda: export_to_backend({
+            if st.button("Create New Sheet", key="btn_create_sheet"):
+                export_to_backend({
                     "processed_resumes": success_items,
                     "mode": "new_sheet",
                     "file_path": os.path.join(EXPORTS_DIR, selected_file),
                     "sheet_name": new_sheet,
-                }),
-            )
+                })
 
 
+    
     # 4️⃣ EXPORT TO MONGODB
     elif export_option == "Export to MongoDB Database":
         mongo_url = st.text_input("MongoDB URL")
@@ -874,52 +864,47 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
         with col2:
             collection_name = st.text_input("Collection Name", "resumes")
 
-        def export_mongo():
+        if st.button("Export to MongoDB", key="btn_export_mongo"):
             if not mongo_url:
                 st.error("Please enter MongoDB URL.")
-                return
-
-            # --------------------
-            # ADD MISSING HEADERS
-            # --------------------
-            headers = {}
-            if st.session_state.get("auth_token"):
-                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-            if st.session_state.get("llm_model"):
-                headers["X-Model"] = st.session_state.llm_model
-            if st.session_state.get("llm_api_key"):
-                headers["X-Api-Key"] = st.session_state.llm_api_key
-
-            response = requests.post(
-                "http://127.0.0.1:8000/export_resumes_mongo",
-                json={
-                    "processed_resumes": success_items,
-                    "mongo_url": mongo_url,
-                    "db_name": db_name,
-                    "collection_name": collection_name,
-                },
-                headers=headers,
-                timeout=120,
-            )
-
-            resp_json = response.json()
-
-            if resp_json.get("status") == "success":
-                st.success(f"Exported {resp_json.get('inserted_count')} resumes.")
             else:
-                st.error(resp_json.get("message", "Export failed."))
+                with st.spinner("⏳ Uploading resumes to MongoDB..."):
+                    try:
+                        headers = {}
+                        if st.session_state.get("auth_token"):
+                            headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+                        if st.session_state.get("llm_model"):
+                            headers["X-Model"] = st.session_state.llm_model
+                        if st.session_state.get("llm_api_key"):
+                            headers["X-Api-Key"] = st.session_state.llm_api_key
 
-        st.button(
-            "Export to MongoDB",
-            use_container_width=True,
-            key="btn_export_mongo",
-            on_click=export_mongo,
-        )
+                        response = requests.post(
+                            "http://127.0.0.1:8000/export_resumes_mongo",
+                            json={
+                                "processed_resumes": success_items,
+                                "mongo_url": mongo_url,
+                                "db_name": db_name,
+                                "collection_name": collection_name,
+                            },
+                            headers=headers,
+                            timeout=120,
+                        )
+
+                        resp_json = response.json()
+
+                        if resp_json.get("status") == "success":
+                            st.success(f"Exported {resp_json.get('inserted_count')} resumes.")
+                        else:
+                            st.error(resp_json.get("message", "Export failed."))
+
+                    except Exception as e:
+                        st.error(f"Exception: {e}")
 
 
-
-    # DOWNLOAD BUTTON
-    if st.session_state.get("excel_file") and st.session_state.excel_file.get("excel_file"):
+    # DOWNLOAD BUTTON - show ONLY for Excel export modes and only if export succeeded
+    if (export_option in excel_export_modes
+            and st.session_state.get("excel_file")
+            and st.session_state.excel_file.get("excel_file")):
         excel_b64 = st.session_state.excel_file["excel_file"]
         excel_bytes = base64.b64decode(excel_b64)
         saved_path = st.session_state.excel_file.get("saved_path", "resumes.xlsx")

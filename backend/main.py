@@ -12,6 +12,8 @@ import base64
 import os
 from mongo_exporter import export_to_mongo
 from pipeline import run_pipeline_db
+from pymongo import MongoClient
+
 
 
 app = FastAPI()
@@ -37,8 +39,55 @@ async def login(username: str = Query(...), password: str = Query(...)):
 # --------------------------
 # 1️⃣ Upload Resumes Only
 # --------------------------
-@app.post("/upload_resumes_only")
-async def upload_resumes_only(authorization: str = Header(None), files: List[UploadFile] = File(...), x_model: str = Header(None), x_api_key: str = Header(None)):
+# @app.post("/upload_resumes_only")
+# async def upload_resumes_only(authorization: str = Header(None), files: List[UploadFile] = File(...), x_model: str = Header(None), x_api_key: str = Header(None)):
+#     if not authorization:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+#     token = authorization.split(" ")[-1]
+#     user = get_user_from_token(token)
+#     if not user:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+#     uploaded_paths = []
+
+#     # create per-user upload dir
+#     user_dir = None
+#     if user and user.get("username"):
+#         user_dir = os.path.join(tempfile.gettempdir(), "resume_scanner_uploads", user.get("username"))
+#         os.makedirs(user_dir, exist_ok=True)
+
+#     for file in files:
+#         try:
+#             if user_dir:
+#                 dest = os.path.join(user_dir, file.filename)
+#                 with open(dest, "wb") as out_f:
+#                     shutil.copyfileobj(file.file, out_f)
+#                 uploaded_paths.append(dest)
+#             else:
+#                 with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
+#                     shutil.copyfileobj(file.file, tmp)
+#                     uploaded_paths.append(tmp.name)
+#         except Exception as e:
+#             print(f"⚠️ Failed to save {file.filename}: {e}")
+#             continue
+
+#     if not uploaded_paths:
+#         return {"status": "error", "message": "No valid resumes uploaded."}
+
+#     return {"status": "success", "uploaded_paths": uploaded_paths}
+
+
+
+# --------------------------
+# 1️⃣ Connect to MongoDB
+# --------------------------
+@app.post("/connect_mongo")
+async def connect_mongo(
+    mongo_url: str = Body(..., description="MongoDB connection URI"),
+    db_name: str = Body(..., description="Database name"),
+    collection_name: str = Body(..., description="Collection name"),
+    authorization: str = Header(None)
+):
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
     token = authorization.split(" ")[-1]
@@ -46,33 +95,16 @@ async def upload_resumes_only(authorization: str = Header(None), files: List[Upl
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    uploaded_paths = []
+    try:
+        client = MongoClient(mongo_url)
+        db = client[db_name]
+        collection = db[collection_name]
+        resume_count = collection.count_documents({})
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    print(f"Connection successful : Resume Count = {resume_count}")
+    return {"status": "success", "resume_count": resume_count}
 
-    # create per-user upload dir
-    user_dir = None
-    if user and user.get("username"):
-        user_dir = os.path.join(tempfile.gettempdir(), "resume_scanner_uploads", user.get("username"))
-        os.makedirs(user_dir, exist_ok=True)
-
-    for file in files:
-        try:
-            if user_dir:
-                dest = os.path.join(user_dir, file.filename)
-                with open(dest, "wb") as out_f:
-                    shutil.copyfileobj(file.file, out_f)
-                uploaded_paths.append(dest)
-            else:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
-                    shutil.copyfileobj(file.file, tmp)
-                    uploaded_paths.append(tmp.name)
-        except Exception as e:
-            print(f"⚠️ Failed to save {file.filename}: {e}")
-            continue
-
-    if not uploaded_paths:
-        return {"status": "error", "message": "No valid resumes uploaded."}
-
-    return {"status": "success", "uploaded_paths": uploaded_paths}
 
 
 # --------------------------
@@ -176,7 +208,7 @@ async def evaluate_resumes(
 
 @app.post("/evaluate_resumes_db")
 async def evaluate_resumes_db(
-    mongo_uri: str = Body(...),
+    mongo_url: str = Body(...),
     db_name: str = Body(...),
     collection_name: str = Body(...),
     jd_data: dict = Body(None),
@@ -196,7 +228,7 @@ async def evaluate_resumes_db(
 
     try:
         processed_resumes = run_pipeline_db(
-            mongo_uri=mongo_uri,
+            mongo_url=mongo_url,
             db_name=db_name,
             collection_name=collection_name,
             weights=jd_data.get("weights") if jd_data else None,

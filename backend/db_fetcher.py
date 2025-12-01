@@ -19,8 +19,8 @@ def clean_mongo_doc(doc: dict) -> dict:
     return doc
 
 
-def fetch_resumes(mongo_uri: str, db_name: str, collection: str):
-    client = MongoClient(mongo_uri)
+def fetch_resumes(mongo_url: str, db_name: str, collection: str):
+    client = MongoClient(mongo_url)
     db = client[db_name]
     coll = db[collection]
 
@@ -51,14 +51,14 @@ if __name__ == "__main__":
 
     import json
 
-    mongo_uri = "mongodb+srv://resume_db_user:Swapnil%4013@cluster0.kg6kzel.mongodb.net/?appName=Cluster0"
+    mongo_url = "mongodb+srv://resume_db_user:Swapnil%4013@cluster0.kg6kzel.mongodb.net/?appName=Cluster0"
     db_name = "resume_db_new"
     collection = "resumes_1"
 
     print("Connecting to MongoDB...\n")
 
     try:
-        resumes = fetch_resumes(mongo_uri, db_name, collection)
+        resumes = fetch_resumes(mongo_url, db_name, collection)
         print(json.dumps(resumes, indent=2))
         print(f"\nFetched {len(resumes)} validated resumes\n")
 

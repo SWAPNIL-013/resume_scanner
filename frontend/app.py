@@ -637,7 +637,7 @@ def force_rerun():
     st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
 
 
-username = st.session_state.get("current_user", "Guest")
+username = st.session_state.get("current_user") or "Guest"
 top_col1, top_col2 = st.columns([8, 1])
 with top_col1:
     st.subheader(f"👋 Welcome, {username}!")
@@ -686,37 +686,118 @@ with st.sidebar:
     supports_on_submit = False
     # Callback to handle auth form submission. Using on_submit ensures
     # session_state is updated immediately and allows us to call experimental_rerun
+    # def _handle_auth_submit():
+    #     auth_tab = st.session_state.get("auth_tab", "Login")
+    #     username = st.session_state.get("_auth_username", "")
+    #     password = st.session_state.get("_auth_password", "")
+    #     full_name = st.session_state.get("_auth_fullname", "")
+    #     try:
+    #         if auth_tab == "Register":
+    #             resp = requests.post(
+    #                 "http://127.0.0.1:8000/register",
+    #                 params={"username": username, "password": password, "full_name": full_name},
+    #                 timeout=10,
+    #             )
+    #             if resp.status_code == 200:
+    #                 st.success("Registration successful. Please login.")
+    #             else:
+    #                 st.error(f"Registration failed: {resp.text}")
+    #         else:
+    #             resp = requests.post(
+    #                 "http://127.0.0.1:8000/login",
+    #                 params={"username": username, "password": password},
+    #                 timeout=10,
+    #             )
+    #             if resp.status_code == 200:
+    #                 token = resp.json().get("access_token")
+    #                 st.session_state.auth_token = token
+    #                 st.session_state.current_user = username
+    #                 st.session_state.show_auth = False
+    #             else:
+    #                 st.error(f"Login failed: {resp.text}")
+    #     except Exception as e:
+    #         st.error(f"Auth request failed: {e}")
     def _handle_auth_submit():
         auth_tab = st.session_state.get("auth_tab", "Login")
         username = st.session_state.get("_auth_username", "")
         password = st.session_state.get("_auth_password", "")
         full_name = st.session_state.get("_auth_fullname", "")
+
         try:
             if auth_tab == "Register":
                 resp = requests.post(
                     "http://127.0.0.1:8000/register",
-                    params={"username": username, "password": password, "full_name": full_name},
+                    params={
+                        "username": username,
+                        "password": password,
+                        "full_name": full_name
+                    },
                     timeout=10,
                 )
+
+                try:
+                    data = resp.json()
+                except:
+                    st.error("Server returned an invalid response.")
+                    st.stop()
+
                 if resp.status_code == 200:
                     st.success("Registration successful. Please login.")
+                    st.stop()
+
                 else:
-                    st.error(f"Registration failed: {resp.text}")
+                    msg = data.get("message", "Registration failed. Please try again.")
+                    st.error(msg)
+                    st.stop()
+
+            # ---------------- LOGIN --------------------
             else:
                 resp = requests.post(
                     "http://127.0.0.1:8000/login",
                     params={"username": username, "password": password},
                     timeout=10,
                 )
+
+                try:
+                    data = resp.json()
+                except:
+                    st.error("Server returned an invalid response.")
+                    st.stop()
+
                 if resp.status_code == 200:
-                    token = resp.json().get("access_token")
+                    token = data.get("access_token")
+                    if not token:
+                        st.error("Login error: Missing token.")
+                        st.stop()
+
                     st.session_state.auth_token = token
                     st.session_state.current_user = username
                     st.session_state.show_auth = False
+                    st.success("Login successful!")
+                    st.stop()
+
+                elif resp.status_code == 401:
+                    msg = data.get("message", "Incorrect username or password.")
+                    st.error(msg)
+                    st.stop()
+
                 else:
-                    st.error(f"Login failed: {resp.text}")
-        except Exception as e:
-            st.error(f"Auth request failed: {e}")
+                    msg = data.get("message", "Login failed. Please try again.")
+                    st.error(msg)
+                    st.stop()
+
+        except requests.exceptions.Timeout:
+            st.error("Authentication service timed out. Try again later.")
+            st.stop()
+
+        except requests.exceptions.ConnectionError:
+            st.error("Auth server not reachable. Check if backend is running.")
+            st.stop()
+
+        except Exception:
+            st.error("Unexpected error during authentication.")
+            st.stop()
+
 
     with account_container:
         # Account controls
@@ -758,36 +839,132 @@ if st.session_state.step >= 1:
         """
     )
 
-    mongo_uri = st.text_input("MongoDB URI", value=st.session_state.get("mongo_uri", "mongodb+srv://resume_db_user:Swapnil%4013@cluster0.kg6kzel.mongodb.net/?appName=Cluster0"))
-    db_name = st.text_input("Database Name", value=st.session_state.get("db_name", "resume_db_new"))
-    collection_name = st.text_input("Collection Name", value=st.session_state.get("collection_name", "resumes_1"))
+    mongo_url = st.text_input(
+        "MongoDB URL",
+        value=st.session_state.get(
+            "mongo_url",
+            "mongodb+srv://resume_db_user:Swapnil%4013@cluster0.kg6kzel.mongodb.net/?appName=Cluster0",
+        ),
+    )
 
+    col1, col2 = st.columns(2)
 
-if st.button("Connect & Continue"):
-    if not mongo_uri or not db_name or not collection_name:
-        st.error("Please fill in all MongoDB fields.")
-    else:
+    with col1:
+        db_name = st.text_input(
+            "Database Name", value=st.session_state.get("db_name", "resume_db_new")
+        )
+    with col2:
+        collection_name = st.text_input(
+            "Collection Name", value=st.session_state.get("collection_name", "resumes_1")
+        )
+
+    # if st.button("Connect & Continue"):
+    #     if not mongo_url or not db_name or not collection_name:
+    #         st.error("Please fill in all MongoDB fields.")
+    #     else:
+    #         if not st.session_state.get("auth_token"):
+    #             st.error("You must be logged in to connect.")
+    #         else:
+    #             with st.spinner("Connecting to MongoDB..."):
+    #                 headers = {
+    #                     "Authorization": f"Bearer {st.session_state.auth_token}"
+    #                 }
+    #                 payload = {
+    #                     "mongo_url": mongo_url,
+    #                     "db_name": db_name,
+    #                     "collection_name": collection_name,
+    #                 }
+    #                 try:
+    #                     resp = requests.post(
+    #                         "http://127.0.0.1:8000/connect_mongo",
+    #                         json=payload,
+    #                         headers=headers,
+    #                         timeout=25,
+    #                     )
+    #                     if resp.status_code == 200:
+    #                         data = resp.json()
+    #                         resume_count = data.get("resume_count", 0)
+    #                         st.session_state.resume_count = resume_count
+    #                         st.session_state.mongo_url = mongo_url
+    #                         st.session_state.db_name = db_name
+    #                         st.session_state.collection_name = collection_name
+
+    #                         st.success(f"Connected! Total resumes found: {resume_count}")
+    #                         st.session_state.step = 2
+    #                     elif resp.status_code == 401:
+    #                         st.error("Unauthorized. Please login again.")
+    #                     else:
+    #                         st.error(f"Connection failed: {resp.text}")
+    #                 except requests.exceptions.RequestException as e:
+    #                     st.error(f"API request failed: {e}")
+    if st.button("Connect & Continue"):
+        # --- BASIC VALIDATION ---
+        if not mongo_url or not db_name or not collection_name:
+            st.warning("All fields are required.")
+            st.stop()
+
+        if not st.session_state.get("auth_token"):
+            st.warning("Please login before connecting to MongoDB.")
+            st.stop()
+
+        # --- SPINNER ---
         with st.spinner("Connecting to MongoDB..."):
             try:
-                client = pymongo.MongoClient(mongo_uri)
-                db = client[db_name]
-                collection = db[collection_name]
+                headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+                payload = {
+                    "mongo_url": mongo_url,
+                    "db_name": db_name,
+                    "collection_name": collection_name,
+                }
 
-                # Fetch count
-                resume_count = collection.count_documents({})
-                st.session_state.resume_count = resume_count
+                resp = requests.post(
+                    "http://127.0.0.1:8000/connect_mongo",
+                    json=payload,
+                    headers=headers,
+                    timeout=25,
+                )
 
-                # Save values
-                st.session_state.mongo_uri = mongo_uri
-                st.session_state.db_name = db_name
-                st.session_state.collection_name = collection_name
+                try:
+                    data = resp.json()
+                except ValueError:
+                    st.error("Server returned an invalid response.")
+                    # ❌ DO NOT STOP HERE INSIDE SPINNER
+                    pass
 
-            except Exception as e:
-                st.error(f"Connection failed: {e}")
-                st.stop()
+            except requests.exceptions.Timeout:
+                st.error("Server is taking too long to respond.")
+                pass
+            except requests.exceptions.ConnectionError:
+                st.error("Cannot reach backend API.")
+                pass
+            except Exception:
+                st.error("Unexpected error occurred.")
+                pass
 
-        st.success(f"Connected! Total resumes found: {resume_count}")
-        st.session_state.step = 2
+        # --- AFTER SPINNER (SAFE ZONE) ---
+        # SUCCESS
+        if resp.status_code == 200:
+            st.session_state.resume_count = data.get("resume_count", 0)
+            st.session_state.mongo_url = mongo_url
+            st.session_state.db_name = db_name
+            st.session_state.collection_name = collection_name
+            st.session_state.step = 2
+
+            st.success(f"Connected! Resumes found: {st.session_state.resume_count}")
+            safe_rerun()
+
+        # AUTH ERROR
+        elif resp.status_code == 401:
+            st.session_state.auth_token = None
+            st.session_state.step = 0
+            st.error(data.get("message", "Session expired. Please login again."))
+            st.stop()
+
+        # OTHER BACKEND ERRORS
+        else:
+            st.error(data.get("message", "Unable to connect to MongoDB."))
+            st.stop()
+
 
 
 
@@ -921,7 +1098,7 @@ if st.session_state.step >= 3:
                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
 
             payload = {
-                "mongo_uri": st.session_state.mongo_uri,
+                "mongo_url": st.session_state.mongo_url,
                 "db_name": st.session_state.db_name,
                 "collection_name": st.session_state.collection_name,
                 "jd_data": st.session_state.jd_data  # may be None
@@ -965,7 +1142,8 @@ if st.session_state.step >= 4 and st.session_state.results:
 
     for resume in st.session_state.results:
         name = resume.get("name", "Unnamed Candidate")
-        with st.expander(f"▶ {name}"):
+        formatted_name = name.title()
+        with st.expander(f"{formatted_name}"):
             st.markdown(f"**Email:** {resume.get('email','')}")
             st.markdown(f"**Phone:** {resume.get('phone','')}")
             st.markdown(f"**Location:** {resume.get('location','')}")
@@ -1241,6 +1419,42 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
     # --------------------------
     # 4️⃣  Export to MongoDB
     # --------------------------
+    # elif st.session_state.export_option == "Export to MongoDB Database":
+    #     st.session_state.save_mode = "mongo"
+    #     mongo_url = st.text_input("MongoDB Connection URL", "")
+    #     db_name = st.text_input("Database Name", "resume_db")
+    #     collection_name = st.text_input("Collection Name", "resumes")
+
+    #     if st.button("Export to MongoDB", key="btn_export_mongo"):
+    #         if not mongo_url:
+    #             st.error("Please enter a valid MongoDB URL.")
+    #         else:
+    #             params = {
+    #                 "processed_resumes": st.session_state.results,
+    #                 "mongo_url": mongo_url,
+    #                 "db_name": db_name,
+    #                 "collection_name": collection_name,
+    #             }
+
+    #             headers = {}
+    #             if st.session_state.get("auth_token"):
+    #                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+    #             with st.spinner("⏳ Uploading resumes to MongoDB..."):
+    #                 try:
+    #                     response = requests.post(
+    #                         "http://127.0.0.1:8000/export_resumes_mongo",
+    #                         json=params,
+    #                         headers=headers,
+    #                         timeout=120,
+    #                     )
+    #                     resp_json = response.json()
+    #                     if resp_json.get("status") == "success":
+    #                         st.success(f"✅ Exported {resp_json.get('inserted_count')} resumes to MongoDB.")
+    #                     else:
+    #                         st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
+    #                 except Exception as e:
+    #                     st.error(f"❌ Exception during export: {e}")
     elif st.session_state.export_option == "Export to MongoDB Database":
         st.session_state.save_mode = "mongo"
         mongo_url = st.text_input("MongoDB Connection URL", "")
@@ -1248,35 +1462,71 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
         collection_name = st.text_input("Collection Name", "resumes")
 
         if st.button("Export to MongoDB", key="btn_export_mongo"):
-            if not mongo_url:
-                st.error("Please enter a valid MongoDB URL.")
-            else:
-                params = {
-                    "processed_resumes": st.session_state.results,
-                    "mongo_url": mongo_url,
-                    "db_name": db_name,
-                    "collection_name": collection_name,
-                }
+            # Basic validation
+            if not mongo_url or not db_name or not collection_name:
+                st.warning("All fields are required.")
+                st.stop()
 
-                headers = {}
-                if st.session_state.get("auth_token"):
-                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+            if not st.session_state.get("auth_token"):
+                st.warning("Please login before exporting to MongoDB.")
+                st.stop()
 
-                with st.spinner("⏳ Uploading resumes to MongoDB..."):
+            resp = None
+            data = {}
+
+            headers = {}
+            if st.session_state.get("auth_token"):
+                headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+            params = {
+                "processed_resumes": st.session_state.results,
+                "mongo_url": mongo_url,
+                "db_name": db_name,
+                "collection_name": collection_name,
+            }
+
+            with st.spinner("⏳ Uploading resumes to MongoDB..."):
+                try:
+                    resp = requests.post(
+                        "http://127.0.0.1:8000/export_resumes_mongo",
+                        json=params,
+                        headers=headers,
+                        timeout=120,
+                    )
                     try:
-                        response = requests.post(
-                            "http://127.0.0.1:8000/export_resumes_mongo",
-                            json=params,
-                            headers=headers,
-                            timeout=120,
-                        )
-                        resp_json = response.json()
-                        if resp_json.get("status") == "success":
-                            st.success(f"✅ Exported {resp_json.get('inserted_count')} resumes to MongoDB.")
-                        else:
-                            st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
-                    except Exception as e:
-                        st.error(f"❌ Exception during export: {e}")
+                        data = resp.json()
+                    except ValueError:
+                        st.error("Server returned an invalid response.")
+                        # Don't stop here, spinner block should finish
+                except requests.exceptions.Timeout:
+                    st.error("Server is taking too long to respond.")
+                    st.stop()
+                except requests.exceptions.ConnectionError:
+                    st.error("Cannot reach backend API.")
+                    st.stop()
+                except Exception:
+                    st.error("Unexpected error occurred.")
+                    st.stop()
+
+            # After spinner
+            if resp is None:
+                st.error("No response from server.")
+                st.stop()
+
+            if resp.status_code == 200:
+                if data.get("status") == "success":
+                    inserted_count = data.get("inserted_count", 0)
+                    st.success(f"✅ Exported {inserted_count} resumes to MongoDB.")
+                else:
+                    st.warning(f"❌ Export failed: {data.get('message', 'Unknown error')}")
+            elif resp.status_code == 401:
+                st.session_state.auth_token = None
+                st.session_state.step = 0
+                st.error(data.get("message", "Session expired. Please login again."))
+                st.stop()
+            else:
+                st.error(data.get("message", "Unable to export resumes to MongoDB."))
+                st.stop()
 
     # --------------------------
     # 5️⃣  Download Button

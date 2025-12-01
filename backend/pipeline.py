@@ -5,7 +5,7 @@ from jd_llm import generate_jd_json
 
 
 def run_pipeline_db(
-    mongo_uri,
+    mongo_url,
     db_name,
     collection_name,
     weights=None,
@@ -24,7 +24,7 @@ def run_pipeline_db(
     
     print(f"Weights received: {weights}\n")
 
-    resumes = fetch_resumes(mongo_uri, db_name, collection_name)
+    resumes = fetch_resumes(mongo_url, db_name, collection_name)
     processed_resumes = []
 
     for idx, resume_json in enumerate(resumes, start=1):
@@ -34,7 +34,8 @@ def run_pipeline_db(
         float_experience_years = total_experience_from_resume(resume_json.get("experience", []))
         total_experience_years = format_experience_years(float_experience_years)
         resume_json["total_experience_years"] = total_experience_years
-        
+
+        print("Starting Scoring...\n")
         # Score if JD present
         if jd_json:
             scored_result = generate_score(
@@ -72,17 +73,19 @@ def run_pipeline_db(
     return processed_resumes
 
 
+
+
+
+
+
+def run_pipeline():
+    pass
 # import json
 # from parser import extract_text_and_links
 # from llm import generate_resume_json
 # from scoring_llm import generate_score
 # from utils import format_experience_years, total_experience_from_resume
 # from jd_llm import generate_jd_json 
-
-
-
-def run_pipeline():
-    pass
 # def run_pipeline(
 #     resume_file_path: str,
 #     weights: dict = None,

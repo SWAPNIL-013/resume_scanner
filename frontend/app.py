@@ -172,7 +172,8 @@ def force_rerun():
     st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
 
 
-username = st.session_state.get("current_user", "Guest")
+username = st.session_state.get("current_user") or "Guest"
+
 top_col1, top_col2 = st.columns([8, 1])
 with top_col1:
     st.subheader(f"👋 Welcome, {username}!")

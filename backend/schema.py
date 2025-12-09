@@ -1,6 +1,5 @@
-from token import OP
-from pydantic import BaseModel, EmailStr
-from typing import List,Dict, Optional
+from pydantic import BaseModel, EmailStr, Field
+from typing import List,Dict,Any, Optional
 
 class Project(BaseModel):
     title: str
@@ -34,6 +33,34 @@ class ResumeSchema(BaseModel):
 
 class ExportRequest(BaseModel):
     processed_resumes: List[Dict]
-    mode: str = "new_file"            # "new_file", "append_sheet", "new_sheet"
-    file_path: Optional[str] = None   # Existing file path if append/new_sheet
-    sheet_name: Optional[str] = None  # Name of sheet to append/create
+    mode: str = "new_file"           
+    file_path: Optional[str] = None  
+    sheet_name: Optional[str] = None  
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    full_name: str | None = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class JobDescriptionSchema(BaseModel):
+    """
+    Dynamic Job Description schema that can handle variable JD fields.
+    Example:
+    {
+        "title": "Data Scientist",
+        "skills": ["Python", "ML"],
+        "experience": "2+ years",
+        "location": "pune",
+        "tools": ["TensorFlow", "SQL"]
+    }
+    """
+    title: Optional[str] = None
+    fields: Dict[str, Any] = Field(default_factory=dict)  # dynamic fields
+
+    class Config:
+        extra = "allow"  # allow additional dynamic keys

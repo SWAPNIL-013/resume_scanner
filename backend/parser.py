@@ -79,3 +79,45 @@ if __name__ == "__main__":
     else:
         print("No links found")
 
+def extract_text_from_jd(file_path: str):
+    """
+    Extracts text from pdf, docx files
+
+    Args:
+        file_path (str): Path to resume file
+
+    Returns:
+        str: extracted text
+    """
+    if not os.path.exists(file_path):
+        print(f"⚠️ File does not exist: {file_path}")
+        return ""
+
+    ext = os.path.splitext(file_path)[1].lower()
+
+    text = ""
+  
+
+    try:
+        if ext == ".pdf":
+            with fitz.open(file_path) as pdf:
+                for page in pdf:
+                    text += page.get_text("text")
+
+        elif ext == ".docx":
+            doc = Document(file_path)
+            text = "\n".join([para.text for para in doc.paragraphs])
+
+        elif ext == ".txt":
+            with open(file_path, "r", encoding="utf-8") as f:
+                text = f.read()
+
+        else:
+            print(f"⚠️ Unsupported file format: {file_path}")
+            return ""
+
+    except Exception as e:
+        print(f"⚠️ Failed to extract text from {file_path}: {e}")
+        return ""
+
+    return text.strip()

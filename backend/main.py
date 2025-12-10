@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Query, Body, Header, HTTPExceptio
 from typing import List
 from parser import extract_text_from_jd
 from schema import ExportRequest,RegisterRequest,LoginRequest
-from auth import  register_user, authenticate_user, create_access_token, get_user_from_token
+from auth import  approve_user, deny_user, get_all_users, get_pending_users,register_user, authenticate_user, create_access_token, get_user_from_token, update_user_role
 from pipeline import run_pipeline
 from exporter import export_to_excel, get_new_excel_name, EXPORTS_DIR
 from llm import generate_jd_json
@@ -15,23 +15,212 @@ from mongo_exporter import export_to_mongo
 import json
 app = FastAPI()
 
-
+# -----------------------------
+# ✅ REGISTER
+# -----------------------------
 @app.post("/register")
 async def register(user: RegisterRequest):
-    created = register_user(user.username, user.password, user.full_name)
-    
+    created = register_user(
+        user.username,
+        user.password,
+        user.full_name,
+        role="user"
+    )
+
     if not created:
         raise HTTPException(status_code=400, detail="User already exists")
-        
-    return {"status": "success", "message": "User registered"}
 
+    return {"status": "success", "message": "User registered, waiting for admin approval"}
+
+
+# -----------------------------
+# ✅ LOGIN
+# -----------------------------
 @app.post("/login")
-async def login(user:LoginRequest):
-    user = authenticate_user(user.username, user.password)
-    if not user:
+async def login(user: LoginRequest):
+    user_data = authenticate_user(user.username, user.password)
+
+    if not user_data:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token({"username": user["username"]})
+
+    if user_data.get("error") == "not_approved":
+        raise HTTPException(status_code=403, detail="Admin approval pending")
+
+    if user_data.get("error") == "denied":
+        raise HTTPException(status_code=403, detail="Your request was denied")
+
+
+    token = create_access_token({
+        "username": user_data["username"],
+        "role": user_data.get("role", "user")
+    })
+
     return {"access_token": token, "token_type": "bearer"}
+
+
+# -----------------------------
+# ✅ CURRENT USER
+# -----------------------------
+@app.get("/me")
+async def me(authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    user = get_user_from_token(token)
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return user
+
+
+# -----------------------------
+# ✅ ADMIN: PENDING USERS
+# -----------------------------
+@app.get("/admin/pending-users")
+async def pending_users(authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    user = get_user_from_token(token)
+
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return get_pending_users()
+
+@app.get("/admin/users")
+async def all_users(authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    user = get_user_from_token(token)
+
+    if not user or user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return get_all_users()
+
+# -----------------------------
+# ✅ ADMIN: APPROVE USER
+# -----------------------------
+@app.post("/admin/approve/{username}")
+async def approve(username: str, authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    user = get_user_from_token(token)
+
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    approved = approve_user(username)
+
+    if not approved:
+        raise HTTPException(status_code=400, detail="Approval failed")
+
+    return {"message": "User approved"}
+
+@app.post("/admin/deny/{username}")
+async def deny(username: str, authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    admin = get_user_from_token(token)
+
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return {"denied": deny_user(username)}
+
+
+@app.post("/admin/change-role/{username}")
+async def change_role(username: str, role: str, authorization: str = Header(None)):
+    token = authorization.replace("Bearer ", "")
+    admin = get_user_from_token(token)
+
+    if not admin or admin["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    return {"updated": update_user_role(username, role)}
+
+
+
+
+
+# @app.post("/register")
+# async def register(user: RegisterRequest):
+#     created = register_user(user.username, user.password, user.full_name, role="user")
+#     if not created:
+#         raise HTTPException(status_code=400, detail="User already exists")
+#     return {"message": "Registered. Waiting for admin approval"}
+
+
+# @app.post("/login")
+# async def login(user: LoginRequest):
+#     user_data = authenticate_user(user.username, user.password)
+
+#     if not user_data:
+#         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+#     if user_data.get("error") == "pending":
+#         raise HTTPException(status_code=403, detail="Admin approval pending")
+
+#     if user_data.get("error") == "denied":
+#         raise HTTPException(status_code=403, detail="Your request was denied")
+
+#     token = create_access_token({
+#         "username": user_data["username"],
+#         "role": user_data["role"]
+#     })
+
+#     return {"access_token": token}
+
+
+# @app.get("/me")
+# async def me(authorization: str = Header(None)):
+#     token = authorization.replace("Bearer ", "")
+#     user = get_user_from_token(token)
+#     if not user:
+#         raise HTTPException(status_code=401, detail="Invalid token")
+#     return user
+
+
+# # -----------------------------
+# # ✅ ADMIN APIs
+# # -----------------------------
+# @app.get("/admin/users")
+# async def all_users(authorization: str = Header(None)):
+#     token = authorization.replace("Bearer ", "")
+#     admin = get_user_from_token(token)
+
+#     if not admin or admin["role"] != "admin":
+#         raise HTTPException(status_code=403, detail="Admin only")
+
+#     return get_all_users()
+
+
+# @app.post("/admin/approve/{username}")
+# async def approve(username: str, authorization: str = Header(None)):
+#     token = authorization.replace("Bearer ", "")
+#     admin = get_user_from_token(token)
+
+#     if not admin or admin["role"] != "admin":
+#         raise HTTPException(status_code=403, detail="Admin only")
+
+#     return {"approved": approve_user(username)}
+
+
+# @app.post("/admin/deny/{username}")
+# async def deny(username: str, authorization: str = Header(None)):
+#     token = authorization.replace("Bearer ", "")
+#     admin = get_user_from_token(token)
+
+#     if not admin or admin["role"] != "admin":
+#         raise HTTPException(status_code=403, detail="Admin only")
+
+#     return {"denied": deny_user(username)}
+
+
+# @app.post("/admin/change-role/{username}")
+# async def change_role(username: str, role: str, authorization: str = Header(None)):
+#     token = authorization.replace("Bearer ", "")
+#     admin = get_user_from_token(token)
+
+#     if not admin or admin["role"] != "admin":
+#         raise HTTPException(status_code=403, detail="Admin only")
+
+#     return {"updated": update_user_role(username, role)}
 
 
 # --------------------------
@@ -267,5 +456,6 @@ async def export_resumes_mongo(req: dict, authorization: str = Header(None)):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 

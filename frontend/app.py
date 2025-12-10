@@ -1,16 +1,3 @@
-# import os
-# import base64
-# import requests
-# import streamlit as st
-# from openpyxl import load_workbook
-
-# --------------------------
-# Project Paths
-# --------------------------
-# PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# EXPORTS_DIR = os.path.join(PROJECT_ROOT, "exports")
-# os.makedirs(EXPORTS_DIR, exist_ok=True)
-
 import os
 import base64
 import requests
@@ -215,11 +202,13 @@ with st.sidebar:
     supports_on_submit = False
     # Callback to handle auth form submission. Using on_submit ensures
     # session_state is updated immediately and allows us to call experimental_rerun
+
     def _handle_auth_submit():
         auth_tab = st.session_state.get("auth_tab", "Login")
         username = st.session_state.get("_auth_username", "")
         password = st.session_state.get("_auth_password", "")
         full_name = st.session_state.get("_auth_fullname", "")
+
         try:
             if auth_tab == "Register":
                 resp = requests.post(
@@ -227,78 +216,35 @@ with st.sidebar:
                     json={"username": username, "password": password, "full_name": full_name},
                     timeout=10,
                 )
+
                 if resp.status_code == 200:
-                    st.success("Registration successful. Please login.")
+                    st.success("✅ Registered! Waiting for admin approval.")
                 else:
-                    st.error(f"Registration failed: {resp.text}")
-            else:
+                    st.error(resp.text)
+
+            else:  # LOGIN
                 resp = requests.post(
                     "http://127.0.0.1:8000/login",
                     json={"username": username, "password": password},
                     timeout=10,
                 )
+
                 if resp.status_code == 200:
-                    token = resp.json().get("access_token")
+                    token = resp.json()["access_token"]
                     st.session_state.auth_token = token
                     st.session_state.current_user = username
                     st.session_state.show_auth = False
+                    force_rerun()
+
+                elif resp.status_code == 403:
+                    st.error("⏳ Admin approval pending")
+
                 else:
-                    st.error(f"Login failed: {resp.text}")
+                    st.error("❌ Invalid login")
+
         except Exception as e:
-            st.error(f"Auth request failed: {e}")
+            st.error(f"Auth error: {e}")
 
-            
-    # def _handle_auth_submit():
-    #     auth_tab = st.session_state.get("auth_tab", "Login")
-    #     username = st.session_state.get("_auth_username", "")
-    #     password = st.session_state.get("_auth_password", "")
-    #     full_name = st.session_state.get("_auth_fullname", "")
-
-    #     try:
-    #         # ✅ REGISTER (MONGO → PENDING)
-    #         if auth_tab == "Register":
-    #             resp = requests.post(
-    #                 "http://127.0.0.1:8000/register-mongo",
-    #                 json={"username": username, "password": password, "full_name": full_name},
-    #                 timeout=10,
-    #             )
-
-    #             if resp.status_code == 200:
-    #                 st.success("✅ Registered successfully. Waiting for admin approval.")
-    #             else:
-    #                 st.error(f"❌ Registration failed: {resp.text}")
-
-    #         # ✅ LOGIN (BLOCKS IF NOT APPROVED)
-    #         else:
-    #             resp = requests.post(
-    #                 "http://127.0.0.1:8000/login-mongo",
-    #                 json={"username": username, "password": password},
-    #                 timeout=10,
-    #             )
-
-    #             if resp.status_code == 200:
-    #                 data = resp.json()
-
-    #                 # ✅ Pending approval block
-    #                 if data.get("error"):
-    #                     st.warning(data["error"])
-    #                     return
-
-    #                 token = data.get("access_token")
-    #                 role = data.get("role", "user")
-
-    #                 st.session_state.auth_token = token
-    #                 st.session_state.current_user = username
-    #                 st.session_state.user_role = role   # ✅ STORE USER ROLE
-    #                 st.session_state.show_auth = False
-
-    #                 st.success("✅ Login successful")
-
-    #             else:
-    #                 st.error(f"❌ Login failed: {resp.text}")
-
-    #     except Exception as e:
-    #         st.error(f"Auth request failed: {e}")
 
 
     with account_container:
@@ -326,6 +272,263 @@ with st.sidebar:
                 # Trigger a rerun so the sidebar updates immediately
                 force_rerun()
             # LLM settings are picked from session_state keys set by the sidebar
+
+# --------------------------
+# ✅ FULL ADMIN CONTROL PANEL
+# --------------------------
+
+# if st.session_state.get("current_user") and st.session_state.get("auth_token"):
+#     headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+
+#     try:
+#         resp = requests.get("http://127.0.0.1:8000/admin/users", headers=headers)
+
+#         if resp.status_code == 200:
+#             users = resp.json()
+
+            
+#             total_users=sum(1 for u in users if u["role"]=="user")
+#             total_admins=sum(1 for u in users if u["role"]=="admin")
+
+#             st.markdown("## 🛡 Admin User Management Panel")
+#             st.caption("Approve, deny, and manage user roles")
+
+#             count_cols = st.columns([1, 1])
+#             count_cols[0].markdown(
+#                 f"<div style='font-size:12px; color:gray; margin:0;'>Total Users</div>"
+#                 f"<div style='font-size:13px; margin:0; font-weight:bold;'>{total_users}</div>",
+#                 unsafe_allow_html=True,
+#             )
+#             count_cols[1].markdown(
+#                 f"<div style='font-size:12px; color:gray; margin:0;'>Total Admins</div>"
+#                 f"<div style='font-size:13px; margin:0; font-weight:bold;'>{total_admins}</div>",
+#                 unsafe_allow_html=True,
+#             )
+
+#             st.markdown("---")
+
+#             # Table Header
+#             header_cols = st.columns([2, 2, 2, 2, 2])
+#             header_cols[0].markdown("**Username**")
+#             header_cols[1].markdown("**Role**")
+#             header_cols[2].markdown("**Status**")
+#             header_cols[3].markdown("**Actions**")
+#             header_cols[4].markdown("**Change Role**")
+            
+#             st.markdown("---")
+
+#             # Table Rows
+#             for user in users:
+#                 cols = st.columns([2, 2, 2, 2, 2])
+
+#                 # Username
+#                 cols[0].markdown(f"👤 **{user['username']}**")
+
+#                 # Role
+#                 cols[1].markdown(f"`{user['role']}`")
+
+#                 # Status
+#                 if user["is_approved"] is True:
+#                     status = "✅ Approved"
+#                 elif user["is_approved"] is False:
+#                     status = "❌ Denied"
+#                 else:
+#                     status = "⏳ Pending"
+#                 cols[2].markdown(status)
+
+#             # Actions button 
+#                 if user["is_approved"] is not True:
+#                     if cols[3].button("✅", key=f"a_{user['username']}", help="Approve user request"):
+#                         requests.post(
+#                             f"http://127.0.0.1:8000/admin/approve/{user['username']}",
+#                             headers=headers
+#                         )
+#                         force_rerun()
+
+#                 if user["is_approved"] is not False:
+#                     if cols[3].button("❌", key=f"d_{user['username']}", help="Decline user request"):
+#                         requests.post(
+#                             f"http://127.0.0.1:8000/admin/deny/{user['username']}",
+#                             headers=headers
+#                         )
+#                         force_rerun()
+
+
+
+#                 # Change Role
+#                 role_col1, role_col2 = cols[4].columns([2, 1])
+                
+#                 new_role = role_col1.selectbox(
+#                     "role",
+#                     ["user", "admin"],
+#                     index=0 if user["role"] == "user" else 1,
+#                     key=f"role_{user['username']}",
+#                     label_visibility="collapsed"
+#                 )
+
+#                 if role_col2.button("🔁", key=f"r_{user['username']}", help="Update Role"):
+#                     requests.post(
+#                         f"http://127.0.0.1:8000/admin/change-role/{user['username']}?role={new_role}",
+#                         headers=headers
+#                     )
+#                     force_rerun()
+
+#                 st.markdown("---")
+
+#     except Exception as e:
+#         st.error(f"Admin panel failed: {e}")
+if st.session_state.get("current_user") and st.session_state.get("auth_token"):
+    headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
+
+    try:
+        resp = requests.get("http://127.0.0.1:8000/admin/users", headers=headers)
+
+        if resp.status_code == 200:
+            users = resp.json()
+
+            # Count totals
+            total_users = sum(1 for u in users if u["role"] == "user")
+            total_admins = sum(1 for u in users if u["role"] == "admin")
+
+            st.markdown("## 🛡 Admin User Management Panel")
+            st.caption("Approve, decline, and manage user roles")
+
+            # Show counts (small caption style)
+            count_cols = st.columns([1, 1])
+            count_cols[0].markdown(
+                f"<div style='font-size:12px; color:gray; margin:0;'>Total Users</div>"
+                f"<div style='font-size:13px; margin:0; font-weight:bold;'>{total_users}</div>",
+                unsafe_allow_html=True,
+            )
+            count_cols[1].markdown(
+                f"<div style='font-size:12px; color:gray; margin:0;'>Total Admins</div>"
+                f"<div style='font-size:13px; margin:0; font-weight:bold;'>{total_admins}</div>",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("---")
+
+            # Search box
+            search_query = st.text_input("🔍 Search username or role", "")
+
+            if search_query:
+                filtered_users = [
+                    u for u in users
+                    if search_query.lower() in u["username"].lower()
+                    or search_query.lower() in u["role"].lower()
+                ]
+            else:
+                filtered_users = users  # All users, including admins
+
+            # Pagination settings
+            PAGE_SIZE = 10
+            total_users_count = len(filtered_users)
+            total_pages = (total_users_count - 1) // PAGE_SIZE + 1 if total_users_count > 0 else 1
+
+            if "page" not in st.session_state:
+                st.session_state.page = 1
+            else:
+                # Reset page if search changes
+                if search_query and st.session_state.get("last_search_query") != search_query:
+                    st.session_state.page = 1
+                st.session_state.last_search_query = search_query
+
+            start_idx = (st.session_state.page - 1) * PAGE_SIZE
+            end_idx = start_idx + PAGE_SIZE
+            page_users = filtered_users[start_idx:end_idx]
+
+            # Table header
+            header_cols = st.columns([3, 2, 2, 2, 3])
+            header_cols[0].markdown("**Username**")
+            header_cols[1].markdown("**Role**")
+            header_cols[2].markdown("**Status**")
+            header_cols[3].markdown("**Actions**")
+            header_cols[4].markdown("**Change Role**")
+            st.markdown("---")
+
+            status_color = {
+                True: "green",
+                False: "red",
+                None: "orange",
+            }
+
+            # Display each user/admin row
+            for user in page_users:
+                cols = st.columns([3, 2, 2, 2, 3])
+
+                # Username
+                cols[0].markdown(f"👤 **{user['username']}**")
+
+                # Role
+                cols[1].markdown(f"`{user['role']}`")
+
+                # Status with color
+                approved = user.get("is_approved")
+                status_text = (
+                    "✅ Approved" if approved else
+                    ("❌ Declined" if approved is False else "⏳ Pending")
+                )
+                cols[2].markdown(
+                    f"<span style='color:{status_color[approved]}'>{status_text}</span>",
+                    unsafe_allow_html=True
+                )
+
+                # Actions (approve/decline)
+                if approved is not True:
+                    if cols[3].button("✅", key=f"a_{user['username']}", help="Approve user request"):
+                        requests.post(
+                            f"http://127.0.0.1:8000/admin/approve/{user['username']}",
+                            headers=headers
+                        )
+                        force_rerun()
+
+
+                if approved is not False:
+                    if cols[3].button("❌", key=f"d_{user['username']}", help="Decline user request"):
+                        requests.post(
+                            f"http://127.0.0.1:8000/admin/deny/{user['username']}",
+                            headers=headers
+                        )
+                        force_rerun()
+
+
+                # Change Role: selectbox + update button
+                role_col1, role_col2 = cols[4].columns([2, 1])
+                new_role = role_col1.selectbox(
+                    "role",
+                    ["user", "admin"],
+                    index=0 if user["role"] == "user" else 1,
+                    key=f"role_{user['username']}",
+                    label_visibility="collapsed"
+                )
+                if role_col2.button("🔁", key=f"r_{user['username']}", help="Update Role"):
+                    requests.post(
+                        f"http://127.0.0.1:8000/admin/change-role/{user['username']}?role={new_role}",
+                        headers=headers
+                    )
+                    force_rerun()
+
+                st.markdown("---")
+
+            # Pagination controls at bottom right
+            _, _, pagination_col = st.columns([6, 1, 3])
+            with pagination_col:
+                prev_col, page_num_col, next_col = st.columns([1, 2, 1])
+                with prev_col:
+                    if st.button("⬅", help="Previous page") and st.session_state.page > 1:
+                        st.session_state.page -= 1
+                        force_rerun()
+                with page_num_col:
+                    st.markdown(f"Page {st.session_state.page} of {total_pages}", unsafe_allow_html=True)
+                with next_col:
+                    if st.button("➡", help="Next page") and st.session_state.page < total_pages:
+                        st.session_state.page += 1
+                        force_rerun()
+
+    except Exception as e:
+        st.error(f"Admin panel failed: {e}")
+else:
+    st.warning("Please log in to access the admin panel.")
 
 # --------------------------
 # Step 1: Upload Resumes
@@ -796,158 +999,6 @@ if st.session_state.step >= 4 and st.session_state.results:
                 st.markdown(breakdown_cards, unsafe_allow_html=True)
 
 
-
-# --------------------------
-# Step 5: Export Options
-# --------------------------
-# if st.session_state.step >= 4 and st.session_state.results:
-#     st.header("Step 5: Export Options")
-
-#     if "export_option" not in st.session_state:
-#         st.session_state.export_option = "Create New Excel File"
-
-#     st.session_state.export_option = st.radio(
-#         "Choose Export Option:",
-#        # ("Create New Excel File", "Append to Existing Sheet", "Create New Sheet in Existing File")
-#        ("Create New Excel File", "Append to Existing Sheet", "Create New Sheet in Existing File", "Export to MongoDB Database")
-
-#     )
-
-#     def export_to_backend(params):
-#         try:
-#             headers = {}
-#             if st.session_state.auth_token:
-#                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-#             if st.session_state.get("llm_model"):
-#                 headers["X-Model"] = st.session_state.get("llm_model")
-#             if st.session_state.get("llm_api_key"):
-#                 headers["X-Api-Key"] = st.session_state.get("llm_api_key")
-#             response = requests.post("http://127.0.0.1:8000/export_resumes_excel", json=params, headers=headers)
-#             if response.status_code == 200:
-#                 resp_json = response.json()
-#                 if resp_json.get("status") == "success" and "excel_file" in resp_json:
-#                     st.session_state.excel_file = resp_json
-#                     st.success("✅ Export successful!")
-#                 else:
-#                     st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
-#             else:
-#                 st.warning(f"❌ Backend returned status {response.status_code}")
-#         except Exception as e:
-#             st.error(f"❌ Exception during export: {str(e)}")
-
-#     # -------------------------- Create New Excel File --------------------------
-#     if st.session_state.export_option == "Create New Excel File":
-#         st.session_state.save_mode = "new_file"
-#         file_name_input = st.text_input("Enter Excel File Name", "resumes.xlsx")
-#         sheet_name_input = st.text_input("Enter Sheet Name", "Sheet1")
-#         if st.button("Export New Excel", key="btn_export_new"):
-#             full_file_path = os.path.join(EXPORTS_DIR, file_name_input)
-#             params = {
-#                 "processed_resumes": st.session_state.results,
-#                 "mode": st.session_state.save_mode,
-#                 "file_path": full_file_path,
-#                 "sheet_name": sheet_name_input
-#             }
-#             export_to_backend(params)
-
-#     # -------------------------- Append to Existing Sheet --------------------------
-#     elif st.session_state.export_option == "Append to Existing Sheet":
-#         st.session_state.save_mode = "append_sheet"
-#         excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
-#         if excel_files:
-#             selected_file = st.selectbox("Select Existing Excel File", excel_files)
-#             if selected_file:
-#                 full_file_path = os.path.join(EXPORTS_DIR, selected_file)
-#                 wb = load_workbook(full_file_path)
-#                 selected_sheet = st.selectbox("Select Existing Sheet", wb.sheetnames)
-#                 if st.button("Append to Sheet", key="btn_append_sheet"):
-#                     params = {
-#                         "processed_resumes": st.session_state.results,
-#                         "mode": st.session_state.save_mode,
-#                         "file_path": full_file_path,
-#                         "sheet_name": selected_sheet
-#                     }
-#                     export_to_backend(params)
-#         else:
-#             st.warning("No existing Excel files found in exports/")
-
-#     # -------------------------- Create New Sheet in Existing File --------------------------
-#     elif st.session_state.export_option == "Create New Sheet in Existing File":
-#         st.session_state.save_mode = "new_sheet"
-#         excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
-#         if excel_files:
-#             selected_file = st.selectbox("Select Existing Excel File", excel_files)
-#             if selected_file:
-#                 full_file_path = os.path.join(EXPORTS_DIR, selected_file)
-#                 new_sheet_name = st.text_input("Enter New Sheet Name", "Sheet1")
-#                 if st.button("Create New Sheet", key="btn_create_sheet"):
-#                     params = {
-#                         "processed_resumes": st.session_state.results,
-#                         "mode": st.session_state.save_mode,
-#                         "file_path": full_file_path,
-#                         "sheet_name": new_sheet_name
-#                     }
-#                     export_to_backend(params)
-
-
-
-#     # -------------------------- Export to MongoDB --------------------------
-#     elif st.session_state.export_option == "Export to MongoDB Database":
-#         st.session_state.save_mode = "mongo"
-
-#         mongo_url = st.text_input("Enter your MongoDB Connection URL (e.g. mongodb+srv://user:pass@cluster.mongodb.net/)")
-#         db_name = st.text_input("Enter Database Name", "resume_db")
-#         collection_name = st.text_input("Enter Collection Name", "resumes")
-
-#         if st.button("Export to MongoDB", key="btn_export_mongo"):
-#             if not mongo_url:
-#                 st.error("Please enter a valid MongoDB URL.")
-#             else:
-#                 params = {
-#                     "processed_resumes": st.session_state.results,
-#                     "mongo_url": mongo_url,
-#                     "db_name": db_name,
-#                     "collection_name": collection_name
-#                 }
-
-#                 headers = {}
-#                 if st.session_state.auth_token:
-#                     headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-
-#                 # ✅ Added spinner for better UX
-#                 with st.spinner("⏳ Uploading resumes to MongoDB... Please wait."):
-#                     try:
-#                         response = requests.post(
-#                             "http://127.0.0.1:8000/export_resumes_mongo",
-#                             json=params,
-#                             headers=headers,
-#                             timeout=120  # optional: prevent hanging
-#                         )
-#                         resp_json = response.json()
-#                         if resp_json.get("status") == "success":
-#                             st.success(f"✅ Exported {resp_json.get('inserted_count')} resumes to MongoDB.")
-#                         else:
-#                             st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
-#                     except Exception as e:
-#                         st.error(f"❌ Exception during export: {str(e)}")
-
-
-
-
-
-#     # -------------------------- Download Button --------------------------
-#     if st.session_state.excel_file and st.session_state.excel_file.get("excel_file"):
-#         excel_b64 = st.session_state.excel_file["excel_file"]
-#         excel_bytes = base64.b64decode(excel_b64)
-#         saved_path = st.session_state.excel_file.get("saved_path", "resumes.xlsx")
-#         st.download_button(
-#             label="Download Excel",
-#             data=excel_bytes,
-#             file_name=os.path.basename(saved_path),
-#             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-#         )
-
-
 # --------------------------
 # Step 5: Export Options
 # --------------------------
@@ -1122,3 +1173,59 @@ if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
             file_name=os.path.basename(saved_path),
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+
+
+
+
+    # def _handle_auth_submit():
+    #     auth_tab = st.session_state.get("auth_tab", "Login")
+    #     username = st.session_state.get("_auth_username", "")
+    #     password = st.session_state.get("_auth_password", "")
+    #     full_name = st.session_state.get("_auth_fullname", "")
+
+    #     try:
+    #         # ✅ REGISTER (MONGO → PENDING)
+    #         if auth_tab == "Register":
+    #             resp = requests.post(
+    #                 "http://127.0.0.1:8000/register-mongo",
+    #                 json={"username": username, "password": password, "full_name": full_name},
+    #                 timeout=10,
+    #             )
+
+    #             if resp.status_code == 200:
+    #                 st.success("✅ Registered successfully. Waiting for admin approval.")
+    #             else:
+    #                 st.error(f"❌ Registration failed: {resp.text}")
+
+    #         # ✅ LOGIN (BLOCKS IF NOT APPROVED)
+    #         else:
+    #             resp = requests.post(
+    #                 "http://127.0.0.1:8000/login-mongo",
+    #                 json={"username": username, "password": password},
+    #                 timeout=10,
+    #             )
+
+    #             if resp.status_code == 200:
+    #                 data = resp.json()
+
+    #                 # ✅ Pending approval block
+    #                 if data.get("error"):
+    #                     st.warning(data["error"])
+    #                     return
+
+    #                 token = data.get("access_token")
+    #                 role = data.get("role", "user")
+
+    #                 st.session_state.auth_token = token
+    #                 st.session_state.current_user = username
+    #                 st.session_state.user_role = role   # ✅ STORE USER ROLE
+    #                 st.session_state.show_auth = False
+
+    #                 st.success("✅ Login successful")
+
+    #             else:
+    #                 st.error(f"❌ Login failed: {resp.text}")
+
+    #     except Exception as e:
+    #         st.error(f"Auth request failed: {e}")

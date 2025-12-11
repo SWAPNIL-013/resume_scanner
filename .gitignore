@@ -1,0 +1,28 @@
+# Python venv
+.venv/
+venv/
+
+# Cache files
+__pycache__/
+*.pyc
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Resumes (keep private, don’t upload real data)
+samples/
+*.pdf
+*.docx
+
+# Environment Variables
+.env
+
+# Exports 
+exports/
+
+# test
+test.py

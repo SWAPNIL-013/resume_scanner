@@ -1,7 +1,7 @@
 from fetch_from_db_backend.db_fetcher import fetch_resumes
 from shared.utils import format_experience_years, total_experience_from_resume
 import json
-from main_backend.parser import extract_text_and_links
+from shared.parser import extract_text_and_links
 from shared.llm import generate_resume_json,generate_jd_json,generate_score
 
 
@@ -10,21 +10,14 @@ def run_pipeline_db(
     mongo_url,
     db_name,
     collection_name,
-    weights=None,
-    jd_text=None,  # Accept JD as raw text here
+    weights: dict = None,
+    jd_json:dict=None, 
     *,
     username=None,
     api_key=None,
     model="gemini-2.5-flash"
 ):
     print("Starting pipeline...\n")
-    # Generate JD JSON if jd_text provided
-    jd_json = None
-    if jd_text and jd_text.strip():
-        jd_json = generate_jd_json(jd_text, api_key=api_key, model=model)
-    print(f"JD JSON:\n{jd_json}")
-    
-    print(f"Weights received: {weights}\n")
 
     resumes = fetch_resumes(mongo_url, db_name, collection_name)
     processed_resumes = []
@@ -61,7 +54,7 @@ def run_pipeline_db(
         else:
             resume_dict = {**resume_json}
 
-        print("Resume JSON:")
+        print(f"Resume JSON:{resume_json.get('name','')}\n")
         print(resume_json)  # prints the whole raw resume JSON
 
         print("\nProcessed Resume Details:")

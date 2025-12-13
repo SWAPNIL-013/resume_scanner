@@ -1,6 +1,8 @@
 from fastapi import APIRouter, FastAPI, UploadFile, File, Query, Body, Header, HTTPException, status
 from typing import List
-from main_backend.parser import extract_text_from_jd
+
+from openpyxl import load_workbook
+from shared.parser import extract_text_from_jd
 from shared.schema import ExportRequest,RegisterRequest,LoginRequest
 from shared.auth import  approve_user, deny_user, get_all_users, get_pending_users,register_user, authenticate_user, create_access_token, get_user_from_token, update_user_role
 from shared.pipeline import run_pipeline
@@ -280,6 +282,108 @@ async def evaluate_resumes(
 # --------------------------
 # 4️⃣ Export Endpoint
 # --------------------------
+# @router.post("/export_resumes_excel")
+# async def export_resumes_excel(req: ExportRequest, authorization: str = Header(None), x_model: str = Header(None), x_api_key: str = Header(None)):
+#     if not authorization:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+#     token = authorization.split(" ")[-1]
+#     user = get_user_from_token(token)
+#     if not user:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+#     try:
+#         user_base = None
+#         if user and user.get("username"):
+#             user_base = os.path.join(EXPORTS_DIR, user.get("username"))
+#             os.makedirs(user_base, exist_ok=True)
+
+#         if req.file_path:
+#             if user_base:
+#                 req.file_path = os.path.join(user_base, os.path.basename(req.file_path))
+#             else:
+#                 req.file_path = os.path.join(EXPORTS_DIR, os.path.basename(req.file_path))
+
+#         df = export_to_excel(
+#             resume_list=req.processed_resumes,
+#             mode=req.mode,
+#             file_path=req.file_path,
+#             sheet_name=req.sheet_name,
+#             base_dir=user_base
+#         )
+
+#         output_file = req.file_path
+#         if req.mode == "new_file" and not req.file_path:
+#             output_file = get_new_excel_name(base_dir=user_base)
+
+#         with open(output_file, "rb") as f:
+#             excel_bytes = f.read()
+#             excel_b64 = base64.b64encode(excel_bytes).decode("utf-8")
+
+#         return {
+#             "status": "success",
+#             "count": len(req.processed_resumes),
+#             "excel_file": excel_b64,
+#             "saved_path": output_file
+#         }
+
+#     except FileNotFoundError as e:
+#         return {"status": "error", "message": str(e)}
+#     except ValueError as e:
+#         return {"status": "error", "message": str(e)}
+#     except Exception as e:
+#         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+# --------------------------
+# 1️⃣ List user export files API
+# --------------------------
+@router.get("/list_exports")
+async def list_exports(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+    token = authorization.split(" ")[-1]
+    user = get_user_from_token(token)
+    if not user or not user.get("username"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user_base = os.path.join(EXPORTS_DIR, user["username"])
+    if not os.path.exists(user_base):
+        return {"files": []}
+
+    files = [f for f in os.listdir(user_base) if f.endswith(".xlsx")]
+    return {"files": files}
+
+# --------------------------
+# 2️⃣ List sheets in a user export file API
+# --------------------------
+@router.get("/list_sheets")
+async def list_sheets(
+    file_name: str = Query(..., description="Excel filename in user exports folder"),
+    authorization: str = Header(None)
+):
+    if not authorization:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
+    token = authorization.split(" ")[-1]
+    user = get_user_from_token(token)
+    if not user or not user.get("username"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user_base = os.path.join(EXPORTS_DIR, user["username"])
+    file_path = os.path.join(user_base, file_name)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        sheets = wb.sheetnames
+        wb.close()
+        return {"sheets": sheets}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read sheets: {str(e)}")
+
+# --------------------------
+# 3️⃣ Export resumes to Excel endpoint (your existing code)
+# --------------------------
 @router.post("/export_resumes_excel")
 async def export_resumes_excel(req: ExportRequest, authorization: str = Header(None), x_model: str = Header(None), x_api_key: str = Header(None)):
     if not authorization:
@@ -296,10 +400,11 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
             os.makedirs(user_base, exist_ok=True)
 
         if req.file_path:
-            if user_base:
-                req.file_path = os.path.join(user_base, os.path.basename(req.file_path))
-            else:
-                req.file_path = os.path.join(EXPORTS_DIR, os.path.basename(req.file_path))
+            # req.file_path here is just filename from frontend (e.g. "resumes.xlsx")
+            req.file_path = os.path.join(user_base if user_base else EXPORTS_DIR, os.path.basename(req.file_path))
+        else:
+            # fallback if no file_path provided
+            req.file_path = get_new_excel_name(base_dir=user_base)
 
         df = export_to_excel(
             resume_list=req.processed_resumes,
@@ -309,11 +414,7 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
             base_dir=user_base
         )
 
-        output_file = req.file_path
-        if req.mode == "new_file" and not req.file_path:
-            output_file = get_new_excel_name(base_dir=user_base)
-
-        with open(output_file, "rb") as f:
+        with open(req.file_path, "rb") as f:
             excel_bytes = f.read()
             excel_b64 = base64.b64encode(excel_bytes).decode("utf-8")
 
@@ -321,7 +422,7 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
             "status": "success",
             "count": len(req.processed_resumes),
             "excel_file": excel_b64,
-            "saved_path": output_file
+            "saved_path": req.file_path
         }
 
     except FileNotFoundError as e:
@@ -330,7 +431,6 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
         return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
-
 # --------------------------
 # 5️⃣ Export to MongoDB
 # --------------------------

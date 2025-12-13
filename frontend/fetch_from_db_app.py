@@ -3,15 +3,10 @@ import os
 import base64
 import requests
 import streamlit as st
-from openpyxl import load_workbook
 import re
 import pymongo
 
 def app():
-        # --------------------------
-        # Project Root
-        # --------------------------
-        PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # --------------------------
         # Session & Auth Handling
@@ -32,25 +27,6 @@ def app():
                     st.warning("⚠️ Failed to fetch user info. Please re-login.")
             except Exception as e:
                 st.error(f"Exception fetching user info: {e}")
-
-        # --------------------------
-        # Dynamic User Export Directory
-        # --------------------------
-        def get_user_exports_dir():
-            """Return the correct exports directory for the logged-in user."""
-            base_dir = os.path.join(PROJECT_ROOT, "exports")
-            username = st.session_state.get("current_user")
-            if username:
-                user_dir = os.path.join(base_dir, username)
-                os.makedirs(user_dir, exist_ok=True)
-                return user_dir
-            else:
-                os.makedirs(base_dir, exist_ok=True)
-                return base_dir
-
-        EXPORTS_DIR = get_user_exports_dir()
-
-
 
         # --------------------------
         # Session State Defaults
@@ -167,7 +143,6 @@ def app():
         top_col1, top_col2 = st.columns([8, 1])
         with top_col1:
             st.subheader(f"👋 Welcome, {username}!")
-            st.write(f"📁 Current Export Folder: {EXPORTS_DIR}")
         with top_col2:
             if st.button("🔄", help="Refresh app"):
                 force_rerun()
@@ -223,76 +198,37 @@ def app():
                     if auth_tab == "Register":
                         resp = requests.post(
                             "http://127.0.0.1:8000/register",
-                            params={
-                                "username": username,
-                                "password": password,
-                                "full_name": full_name
-                            },
+                            json={"username": username, "password": password, "full_name": full_name},
                             timeout=10,
                         )
 
-                        try:
-                            data = resp.json()
-                        except:
-                            st.error("Server returned an invalid response.")
-                            st.stop()
-
                         if resp.status_code == 200:
-                            st.success("Registration successful. Please login.")
-                            st.stop()
-
+                            st.success("✅ Registered! Waiting for admin approval.")
                         else:
-                            msg = data.get("message", "Registration failed. Please try again.")
-                            st.error(msg)
-                            st.stop()
+                            st.error(resp.text)
 
-                    # ---------------- LOGIN --------------------
-                    else:
+                    else:  # LOGIN
                         resp = requests.post(
                             "http://127.0.0.1:8000/login",
-                            params={"username": username, "password": password},
+                            json={"username": username, "password": password},
                             timeout=10,
                         )
 
-                        try:
-                            data = resp.json()
-                        except:
-                            st.error("Server returned an invalid response.")
-                            st.stop()
-
                         if resp.status_code == 200:
-                            token = data.get("access_token")
-                            if not token:
-                                st.error("Login error: Missing token.")
-                                st.stop()
-
+                            token = resp.json()["access_token"]
                             st.session_state.auth_token = token
                             st.session_state.current_user = username
                             st.session_state.show_auth = False
-                            st.success("Login successful!")
-                            st.stop()
+                            force_rerun()
 
-                        elif resp.status_code == 401:
-                            msg = data.get("message", "Incorrect username or password.")
-                            st.error(msg)
-                            st.stop()
+                        elif resp.status_code == 403:
+                            st.error("⏳ Admin approval pending")
 
                         else:
-                            msg = data.get("message", "Login failed. Please try again.")
-                            st.error(msg)
-                            st.stop()
+                            st.error("❌ Invalid login")
 
-                except requests.exceptions.Timeout:
-                    st.error("Authentication service timed out. Try again later.")
-                    st.stop()
-
-                except requests.exceptions.ConnectionError:
-                    st.error("Auth server not reachable. Check if backend is running.")
-                    st.stop()
-
-                except Exception:
-                    st.error("Unexpected error during authentication.")
-                    st.stop()
+                except Exception as e:
+                    st.error(f"Auth error: {e}")
 
 
             with account_container:
@@ -429,69 +365,168 @@ def app():
         # --------------------------
         # Step 2: Job Description & Weights
         # --------------------------
-        if st.session_state.step >= 2:
-            st.header("Step 2: Enter Job Description & Adjust Weights")
+        # if st.session_state.step >= 2:
+        #     st.header("Step 2: Enter Job Description & Adjust Weights")
 
-            example_jd = """Title: Software Engineer
-        Experience: 2+ years
-        Skills: Python, FastAPI, MongoDB, Streamlit
-        Location: Remote
-        Description: Build and maintain backend services for AI-powered systems.
-        """
+        #     example_jd = """Title: Software Engineer
+        # Experience: 2+ years
+        # Skills: Python, FastAPI, MongoDB, Streamlit
+        # Location: Remote
+        # Description: Build and maintain backend services for AI-powered systems.
+        # """
 
-            st.markdown(
-                """
-                💡 **Tip:** Enter the Job Description in **key–value** format (each on a new line):  
-                ```
-                Title: Software Engineer
-                Skills: Python, FastAPI
-                Experience: 2 years
-                ```
-                Then click **Update JD** after editing.
-                """
-            )
+        #     st.markdown(
+        #         """
+        #         💡 **Tip:** Enter the Job Description in **key–value** format (each on a new line):  
+        #         ```
+        #         Title: Software Engineer
+        #         Skills: Python, FastAPI
+        #         Experience: 2 years
+        #         ```
+        #         Then click **Update JD** after editing.
+        #         """
+        #     )
 
-            jd_text = st.text_area(
-                "📝 Paste Job Description here:",
-                value=st.session_state.get("jd_text", example_jd),
-                height=220,
-                key="jd_input"
-            )
+        #     jd_text = st.text_area(
+        #         "📝 Paste Job Description here:",
+        #         value=st.session_state.get("jd_text", example_jd),
+        #         height=220,
+        #         key="jd_input"
+        #     )
 
-            if st.button("Update JD"):
-                if jd_text.strip() == "":
-                    st.error("❌ Job Description cannot be empty.")
-                else:
-                    st.session_state.jd_text = jd_text
-                    st.success("Job Description updated successfully!")
+        #     if st.button("Update JD"):
+        #         if jd_text.strip() == "":
+        #             st.error("❌ Job Description cannot be empty.")
+        #         else:
+        #             st.session_state.jd_text = jd_text
+        #             st.success("Job Description updated successfully!")
 
             
 
-            def extract_fields_from_jd(jd_text):
-                """Extract keys from JD lines like 'Skills:' or 'Experience:'"""
-                fields = []
-                for line in jd_text.splitlines():
-                    match = re.match(r"^\s*([A-Za-z_ ]+)\s*:", line)
-                    if match:
-                        key = match.group(1).strip().lower().replace(" ", "_")
-                        fields.append(key)
-                return list(dict.fromkeys(fields))  # remove duplicates
+        #     def extract_fields_from_jd(jd_text):
+        #         """Extract keys from JD lines like 'Skills:' or 'Experience:'"""
+        #         fields = []
+        #         for line in jd_text.splitlines():
+        #             match = re.match(r"^\s*([A-Za-z_ ]+)\s*:", line)
+        #             if match:
+        #                 key = match.group(1).strip().lower().replace(" ", "_")
+        #                 fields.append(key)
+        #         return list(dict.fromkeys(fields))  # remove duplicates
 
-            current_jd = st.session_state.get("jd_text", "")
-            fields = extract_fields_from_jd(current_jd) if current_jd.strip() else []
+        #     current_jd = st.session_state.get("jd_text", "")
+        #     fields = extract_fields_from_jd(current_jd) if current_jd.strip() else []
 
-            # remove unwanted fields like "title"
-            fields = [f for f in fields if f.lower() != "title"]
+        #     # remove unwanted fields like "title"
+        #     fields = [f for f in fields if f.lower() != "title"]
 
-            if not fields and current_jd.strip():
-                st.info("No specific fields detected — default sliders will be used.")
-                fields = ["skills", "experience", "education", "certifications"]
+        #     if not fields and current_jd.strip():
+        #         st.info("No specific fields detected — default sliders will be used.")
+        #         fields = ["skills", "experience", "education", "certifications"]
 
-            if current_jd.strip():
-                st.subheader("Weights (adjust using sliders)")
+        #     if current_jd.strip():
+        #         st.subheader("Weights (adjust using sliders)")
+        #         weights = {}
+        #         for field in fields:
+        #             default_val = st.session_state.weights.get(field, 0.2) * 100  # convert to %
+        #             weights[field] = st.slider(
+        #                 f"{field.capitalize()} Weight (%)",
+        #                 0, 100, int(default_val), 5,
+        #                 key=f"w_{field}"
+        #             )
+
+        #         total = sum(weights.values())
+        #         st.markdown(f"**Total Weight Sum:** `{total}%`")
+
+        #         if total > 100:
+        #             st.warning("⚠️ Total weight exceeds 100%. Please adjust sliders.")
+        #         if total < 100:
+        #             st.warning("⚠️ Total weight is below 100%. Please adjust sliders.")
+
+        #         weights = {k: round(v / 100, 2) for k, v in weights.items()}
+        #         st.session_state.weights = weights
+        #     else:
+        #         st.session_state.weights = {}
+        #         st.info("ℹ️ Please enter a valid Job Description to proceed.")
+
+        #     # Disable Evaluate button if JD empty
+        #     evaluate_disabled = not bool(current_jd.strip())
+
+        #     if st.button("Evaluate Resume(s)", key="btn_evaluate", disabled=evaluate_disabled):
+        #         headers = {}
+        #         if st.session_state.auth_token:
+        #             headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+        #         if st.session_state.get("llm_model"):
+        #             headers["X-Model"] = st.session_state.get("llm_model")
+        #         if st.session_state.get("llm_api_key"):
+        #             headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+
+        #         jd_data = {
+        #             "jd_text": current_jd,
+        #             "weights": st.session_state.weights
+        #         }
+
+        #         resp = requests.post("http://127.0.0.1:8000/db/upload_jd", json=jd_data, headers=headers)
+        #         if resp.status_code == 200:
+        #             st.session_state.jd_data = resp.json().get("jd_data")
+        #             st.success("✅ JD uploaded successfully!")
+        #             st.session_state.step = 3
+        #         else:
+        #             st.error(f"Failed to upload JD: {resp.text}")
+        #             st.stop()
+        if st.session_state.step >= 2:
+            st.header("Step 2: Upload Job Description & Assign Weights")
+
+            jd_file = st.file_uploader(
+                "📄 Upload Job Description (PDF/DOCX)",
+                type=["pdf", "docx"],
+                key="jd_file"
+            )
+
+            upload_clicked = False
+            if jd_file:
+                upload_clicked = st.button("Upload JD")
+
+            if upload_clicked:
+                headers = {}
+                if st.session_state.auth_token:
+                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+                if st.session_state.get("llm_model"):
+                    headers["X-Model"] = st.session_state.get("llm_model")
+                if st.session_state.get("llm_api_key"):
+                    headers["X-Api-Key"] = st.session_state.get("llm_api_key")
+
+                files = {
+                    "file": (jd_file.name, jd_file, jd_file.type)
+                }
+
+                with st.spinner("⏳ Processing JD and generating sliders..."):
+                    response = requests.post(
+                        "http://127.0.0.1:8000/upload_jd",
+                        headers=headers,
+                        files=files
+                    )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    st.session_state.jd_fields = data.get("jd_fields", [])
+                    st.session_state.jd_json = data.get("jd_json", {})
+                    st.success("✅ JD processed successfully! Sliders generated.")
+                else:
+                    st.error(f"❌ JD upload failed: {response.text}")
+                    st.stop()
+
+            # Enforce JD file upload
+            if "jd_fields" not in st.session_state or not st.session_state.jd_fields:
+                st.warning("⚠️ Please upload a valid Job Description file to proceed.")
+                st.stop()
+
+            # Show sliders to assign weights if JD fields exist
+            if "jd_fields" in st.session_state and st.session_state.jd_fields:
+                st.subheader("🎚️ Assign Weights")
+
                 weights = {}
-                for field in fields:
-                    default_val = st.session_state.weights.get(field, 0.2) * 100  # convert to %
+                for field in st.session_state.jd_fields:
+                    default_val = st.session_state.get("weights", {}).get(field, 0.2) * 100
                     weights[field] = st.slider(
                         f"{field.capitalize()} Weight (%)",
                         0, 100, int(default_val), 5,
@@ -501,43 +536,22 @@ def app():
                 total = sum(weights.values())
                 st.markdown(f"**Total Weight Sum:** `{total}%`")
 
-                if total > 100:
-                    st.warning("⚠️ Total weight exceeds 100%. Please adjust sliders.")
-                if total < 100:
-                    st.warning("⚠️ Total weight is below 100%. Please adjust sliders.")
 
                 weights = {k: round(v / 100, 2) for k, v in weights.items()}
                 st.session_state.weights = weights
-            else:
-                st.session_state.weights = {}
-                st.info("ℹ️ Please enter a valid Job Description to proceed.")
 
-            # Disable Evaluate button if JD empty
-            evaluate_disabled = not bool(current_jd.strip())
+                if st.button("Proceed to Evaluation", key="btn_proceed_jd"):
+                    if st.session_state.get("resume_count", 0) == 0:
+                        st.warning("No resumes found in the database. Please fetch at least one resume before proceeding.")
+                        st.stop()
 
-            if st.button("Evaluate Resume(s)", key="btn_evaluate", disabled=evaluate_disabled):
-                headers = {}
-                if st.session_state.auth_token:
-                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-                if st.session_state.get("llm_model"):
-                    headers["X-Model"] = st.session_state.get("llm_model")
-                if st.session_state.get("llm_api_key"):
-                    headers["X-Api-Key"] = st.session_state.get("llm_api_key")
 
-                jd_data = {
-                    "jd_text": current_jd,
-                    "weights": st.session_state.weights
-                }
-
-                resp = requests.post("http://127.0.0.1:8000/db/upload_jd", json=jd_data, headers=headers)
-                if resp.status_code == 200:
-                    st.session_state.jd_data = resp.json().get("jd_data")
-                    st.success("✅ JD uploaded successfully!")
+                    jd_data = {
+                        "jd_json": st.session_state.jd_json,
+                        "weights": st.session_state.weights
+                    }
+                    st.session_state.jd_data = jd_data
                     st.session_state.step = 3
-                else:
-                    st.error(f"Failed to upload JD: {resp.text}")
-                    st.stop()
-
 
         # --------------------------
         # Step 3: Evaluate Resumes (from DB)
@@ -756,8 +770,244 @@ def app():
         # --------------------------
         # Step 5: Export Options
         # --------------------------
+        # if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
+        #     st.header("Step 5: Export Options")
+
+        #     # --- default selection
+        #     if "export_option" not in st.session_state:
+        #         st.session_state.export_option = "Create New Excel File"
+
+        #     # --- option radio
+        #     st.session_state.export_option = st.radio(
+        #         "Choose Export Option:",
+        #         (
+        #             "Create New Excel File",
+        #             "Append to Existing Sheet",
+        #             "Create New Sheet in Existing File",
+        #             "Export to MongoDB Database",
+        #         ),
+        #     )
+
+        #     # --------------------------
+        #     # Utility to call backend
+        #     # --------------------------
+        #     def export_to_backend(params):
+        #         try:
+        #             headers = {}
+        #             if st.session_state.get("auth_token"):
+        #                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+        #             if st.session_state.get("llm_model"):
+        #                 headers["X-Model"] = st.session_state.llm_model
+        #             if st.session_state.get("llm_api_key"):
+        #                 headers["X-Api-Key"] = st.session_state.llm_api_key
+
+        #             response = requests.post(
+        #                 "http://127.0.0.1:8000/db/export_resumes_excel",
+        #                 json=params,
+        #                 headers=headers,
+        #                 timeout=120
+        #             )
+
+        #             if response.status_code == 200:
+        #                 resp_json = response.json()
+        #                 if resp_json.get("status") == "success" and resp_json.get("excel_file"):
+        #                     st.session_state.excel_file = resp_json
+        #                     st.success("✅ Export successful!")
+        #                 else:
+        #                     st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
+        #             else:
+        #                 st.warning(f"❌ Backend returned status {response.status_code}")
+
+        #         except Exception as e:
+        #             st.error(f"❌ Exception during export: {e}")
+
+        #     # --------------------------
+        #     # 1️⃣  Create New Excel File
+        #     # --------------------------
+        #     if st.session_state.export_option == "Create New Excel File":
+        #         st.session_state.save_mode = "new_file"
+        #         file_name = st.text_input("Enter Excel File Name", "resumes.xlsx")
+        #         sheet_name = st.text_input("Enter Sheet Name", "Sheet1")
+
+        #         if st.button("Export New Excel", key="btn_export_new"):
+        #             file_path = os.path.join(EXPORTS_DIR, file_name)
+        #             params = {
+        #                 "processed_resumes": st.session_state.results,
+        #                 "mode": "new_file",
+        #                 "file_path": file_path,
+        #                 "sheet_name": sheet_name,
+        #             }
+        #             export_to_backend(params)
+
+        #     # --------------------------
+        #     # 2️⃣  Append to Existing Sheet
+        #     # --------------------------
+        #     elif st.session_state.export_option == "Append to Existing Sheet":
+        #         st.session_state.save_mode = "append_sheet"
+        #         excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
+
+        #         if excel_files:
+        #             selected_file = st.selectbox("Select Existing Excel File", excel_files)
+        #             if selected_file:
+        #                 file_path = os.path.join(EXPORTS_DIR, selected_file)
+        #                 wb = load_workbook(file_path)
+        #                 selected_sheet = st.selectbox("Select Existing Sheet", wb.sheetnames)
+
+        #                 if st.button("Append to Sheet", key="btn_append_sheet"):
+        #                     params = {
+        #                         "processed_resumes": st.session_state.results,
+        #                         "mode": "append_sheet",
+        #                         "file_path": file_path,
+        #                         "sheet_name": selected_sheet,
+        #                     }
+        #                     export_to_backend(params)
+        #         else:
+        #             st.warning("No existing Excel files found in your exports folder.")
+
+        #     # --------------------------
+        #     # 3️⃣  Create New Sheet in Existing File
+        #     # --------------------------
+        #     elif st.session_state.export_option == "Create New Sheet in Existing File":
+        #         st.session_state.save_mode = "new_sheet"
+        #         excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
+
+        #         if excel_files:
+        #             selected_file = st.selectbox("Select Existing Excel File", excel_files)
+        #             if selected_file:
+        #                 file_path = os.path.join(EXPORTS_DIR, selected_file)
+        #                 new_sheet = st.text_input("Enter New Sheet Name", "Sheet1")
+
+        #                 if st.button("Create New Sheet", key="btn_create_sheet"):
+        #                     params = {
+        #                         "processed_resumes": st.session_state.results,
+        #                         "mode": "new_sheet",
+        #                         "file_path": file_path,
+        #                         "sheet_name": new_sheet,
+        #                     }
+        #                     export_to_backend(params)
+        #         else:
+        #             st.warning("No existing Excel files found in your exports folder.")
+
+        
+        #     elif st.session_state.export_option == "Export to MongoDB Database":
+        #         st.session_state.save_mode = "mongo"
+        #         mongo_url = st.text_input("MongoDB Connection URL", "")
+        #         db_name = st.text_input("Database Name", "resume_db")
+        #         collection_name = st.text_input("Collection Name", "resumes")
+
+        #         if st.button("Export to MongoDB", key="btn_export_mongo"):
+        #             # Basic validation
+        #             if not mongo_url or not db_name or not collection_name:
+        #                 st.warning("All fields are required.")
+        #                 st.stop()
+
+        #             if not st.session_state.get("auth_token"):
+        #                 st.warning("Please login before exporting to MongoDB.")
+        #                 st.stop()
+
+        #             resp = None
+        #             data = {}
+
+        #             headers = {}
+        #             if st.session_state.get("auth_token"):
+        #                 headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+        #             params = {
+        #                 "processed_resumes": st.session_state.results,
+        #                 "mongo_url": mongo_url,
+        #                 "db_name": db_name,
+        #                 "collection_name": collection_name,
+        #             }
+
+        #             with st.spinner("⏳ Uploading resumes to MongoDB..."):
+        #                 try:
+        #                     resp = requests.post(
+        #                         "http://127.0.0.1:8000/db/export_resumes_mongo",
+        #                         json=params,
+        #                         headers=headers,
+        #                         timeout=120,
+        #                     )
+        #                     try:
+        #                         data = resp.json()
+        #                     except ValueError:
+        #                         st.error("Server returned an invalid response.")
+        #                         # Don't stop here, spinner block should finish
+        #                 except requests.exceptions.Timeout:
+        #                     st.error("Server is taking too long to respond.")
+        #                     st.stop()
+        #                 except requests.exceptions.ConnectionError:
+        #                     st.error("Cannot reach backend API.")
+        #                     st.stop()
+        #                 except Exception:
+        #                     st.error("Unexpected error occurred.")
+        #                     st.stop()
+
+        #             # After spinner
+        #             if resp is None:
+        #                 st.error("No response from server.")
+        #                 st.stop()
+
+        #             if resp.status_code == 200:
+        #                 if data.get("status") == "success":
+        #                     inserted_count = data.get("inserted_count", 0)
+        #                     st.success(f"✅ Exported {inserted_count} resumes to MongoDB.")
+        #                 else:
+        #                     st.warning(f"❌ Export failed: {data.get('message', 'Unknown error')}")
+        #             elif resp.status_code == 401:
+        #                 st.session_state.auth_token = None
+        #                 st.session_state.step = 0
+        #                 st.error(data.get("message", "Session expired. Please login again."))
+        #                 st.stop()
+        #             else:
+        #                 st.error(data.get("message", "Unable to export resumes to MongoDB."))
+        #                 st.stop()
+
+        #     # --------------------------
+        #     # 5️⃣  Download Button
+        #     # --------------------------
+        #     if st.session_state.get("excel_file") and st.session_state.excel_file.get("excel_file"):
+        #         excel_b64 = st.session_state.excel_file["excel_file"]
+        #         excel_bytes = base64.b64decode(excel_b64)
+        #         saved_path = st.session_state.excel_file.get("saved_path", "resumes.xlsx")
+        #         st.download_button(
+        #             label="Download Excel",
+        #             data=excel_bytes,
+        #             file_name=os.path.basename(saved_path),
+        #             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        #         )
+        def fetch_user_export_files():
+            try:
+                headers = {}
+                if st.session_state.get("auth_token"):
+                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+                response = requests.get("http://127.0.0.1:8000/list_exports", headers=headers)
+                if response.status_code == 200:
+                    return response.json().get("files", [])
+                else:
+                    st.warning(f"Failed to fetch export files: {response.status_code}")
+                    return []
+            except Exception as e:
+                st.error(f"Exception fetching export files: {e}")
+                return []
+
+        def fetch_sheets_for_file(file_name):
+            try:
+                headers = {}
+                if st.session_state.get("auth_token"):
+                    headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+                params = {"file_name": file_name}
+                response = requests.get("http://127.0.0.1:8000/list_sheets", headers=headers, params=params)
+                if response.status_code == 200:
+                    return response.json().get("sheets", [])
+                else:
+                    st.warning(f"Failed to fetch sheets: {response.status_code}")
+                    return []
+            except Exception as e:
+                st.error(f"Exception fetching sheets: {e}")
+                return []
+
         if st.session_state.get("step", 0) >= 4 and st.session_state.get("results"):
-            st.header("Step 5: Export Options")
+            st.subheader("Download Evaluation Results")
 
             # --- default selection
             if "export_option" not in st.session_state:
@@ -788,7 +1038,7 @@ def app():
                         headers["X-Api-Key"] = st.session_state.llm_api_key
 
                     response = requests.post(
-                        "http://127.0.0.1:8000/db/export_resumes_excel",
+                        "http://127.0.0.1:8000/export_resumes_excel",
                         json=params,
                         headers=headers,
                         timeout=120
@@ -816,11 +1066,10 @@ def app():
                 sheet_name = st.text_input("Enter Sheet Name", "Sheet1")
 
                 if st.button("Export New Excel", key="btn_export_new"):
-                    file_path = os.path.join(EXPORTS_DIR, file_name)
                     params = {
                         "processed_resumes": st.session_state.results,
                         "mode": "new_file",
-                        "file_path": file_path,
+                        "file_path": file_name,
                         "sheet_name": sheet_name,
                     }
                     export_to_backend(params)
@@ -830,20 +1079,24 @@ def app():
             # --------------------------
             elif st.session_state.export_option == "Append to Existing Sheet":
                 st.session_state.save_mode = "append_sheet"
-                excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
+
+                excel_files = fetch_user_export_files()
 
                 if excel_files:
                     selected_file = st.selectbox("Select Existing Excel File", excel_files)
                     if selected_file:
-                        file_path = os.path.join(EXPORTS_DIR, selected_file)
-                        wb = load_workbook(file_path)
-                        selected_sheet = st.selectbox("Select Existing Sheet", wb.sheetnames)
+                        sheets = fetch_sheets_for_file(selected_file)
+                        if sheets:
+                            selected_sheet = st.selectbox("Select Existing Sheet", sheets)
+                        else:
+                            st.warning("No sheets found in the selected file.")
+                            selected_sheet = None
 
-                        if st.button("Append to Sheet", key="btn_append_sheet"):
+                        if selected_sheet and st.button("Append to Sheet", key="btn_append_sheet"):
                             params = {
                                 "processed_resumes": st.session_state.results,
                                 "mode": "append_sheet",
-                                "file_path": file_path,
+                                "file_path": selected_file,  # filename only, backend will add user folder
                                 "sheet_name": selected_sheet,
                             }
                             export_to_backend(params)
@@ -855,26 +1108,28 @@ def app():
             # --------------------------
             elif st.session_state.export_option == "Create New Sheet in Existing File":
                 st.session_state.save_mode = "new_sheet"
-                excel_files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith(".xlsx")]
+
+                excel_files = fetch_user_export_files()
 
                 if excel_files:
                     selected_file = st.selectbox("Select Existing Excel File", excel_files)
                     if selected_file:
-                        file_path = os.path.join(EXPORTS_DIR, selected_file)
                         new_sheet = st.text_input("Enter New Sheet Name", "Sheet1")
 
-                        if st.button("Create New Sheet", key="btn_create_sheet"):
+                        if new_sheet and st.button("Create New Sheet", key="btn_create_sheet"):
                             params = {
                                 "processed_resumes": st.session_state.results,
                                 "mode": "new_sheet",
-                                "file_path": file_path,
+                                "file_path": selected_file,  # filename only
                                 "sheet_name": new_sheet,
                             }
                             export_to_backend(params)
                 else:
                     st.warning("No existing Excel files found in your exports folder.")
 
-        
+            # --------------------------
+            # 4️⃣  Export to MongoDB
+            # --------------------------
             elif st.session_state.export_option == "Export to MongoDB Database":
                 st.session_state.save_mode = "mongo"
                 mongo_url = st.text_input("MongoDB Connection URL", "")
@@ -882,71 +1137,35 @@ def app():
                 collection_name = st.text_input("Collection Name", "resumes")
 
                 if st.button("Export to MongoDB", key="btn_export_mongo"):
-                    # Basic validation
-                    if not mongo_url or not db_name or not collection_name:
-                        st.warning("All fields are required.")
-                        st.stop()
-
-                    if not st.session_state.get("auth_token"):
-                        st.warning("Please login before exporting to MongoDB.")
-                        st.stop()
-
-                    resp = None
-                    data = {}
-
-                    headers = {}
-                    if st.session_state.get("auth_token"):
-                        headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
-
-                    params = {
-                        "processed_resumes": st.session_state.results,
-                        "mongo_url": mongo_url,
-                        "db_name": db_name,
-                        "collection_name": collection_name,
-                    }
-
-                    with st.spinner("⏳ Uploading resumes to MongoDB..."):
-                        try:
-                            resp = requests.post(
-                                "http://127.0.0.1:8000/db/export_resumes_mongo",
-                                json=params,
-                                headers=headers,
-                                timeout=120,
-                            )
-                            try:
-                                data = resp.json()
-                            except ValueError:
-                                st.error("Server returned an invalid response.")
-                                # Don't stop here, spinner block should finish
-                        except requests.exceptions.Timeout:
-                            st.error("Server is taking too long to respond.")
-                            st.stop()
-                        except requests.exceptions.ConnectionError:
-                            st.error("Cannot reach backend API.")
-                            st.stop()
-                        except Exception:
-                            st.error("Unexpected error occurred.")
-                            st.stop()
-
-                    # After spinner
-                    if resp is None:
-                        st.error("No response from server.")
-                        st.stop()
-
-                    if resp.status_code == 200:
-                        if data.get("status") == "success":
-                            inserted_count = data.get("inserted_count", 0)
-                            st.success(f"✅ Exported {inserted_count} resumes to MongoDB.")
-                        else:
-                            st.warning(f"❌ Export failed: {data.get('message', 'Unknown error')}")
-                    elif resp.status_code == 401:
-                        st.session_state.auth_token = None
-                        st.session_state.step = 0
-                        st.error(data.get("message", "Session expired. Please login again."))
-                        st.stop()
+                    if not mongo_url:
+                        st.error("Please enter a valid MongoDB URL.")
                     else:
-                        st.error(data.get("message", "Unable to export resumes to MongoDB."))
-                        st.stop()
+                        params = {
+                            "processed_resumes": st.session_state.results,
+                            "mongo_url": mongo_url,
+                            "db_name": db_name,
+                            "collection_name": collection_name,
+                        }
+
+                        headers = {}
+                        if st.session_state.get("auth_token"):
+                            headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
+
+                        with st.spinner("⏳ Uploading resumes to MongoDB..."):
+                            try:
+                                response = requests.post(
+                                    "http://127.0.0.1:8000/export_resumes_mongo",
+                                    json=params,
+                                    headers=headers,
+                                    timeout=120,
+                                )
+                                resp_json = response.json()
+                                if resp_json.get("status") == "success":
+                                    st.success(f"✅ Exported {resp_json.get('inserted_count')} resumes to MongoDB.")
+                                else:
+                                    st.warning(f"❌ Export failed: {resp_json.get('message', 'Unknown error')}")
+                            except Exception as e:
+                                st.error(f"❌ Exception during export: {e}")
 
             # --------------------------
             # 5️⃣  Download Button
@@ -961,5 +1180,6 @@ def app():
                     file_name=os.path.basename(saved_path),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
+
 if __name__ == "__main__":
     app()

@@ -7,9 +7,11 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment
 from pymongo import MongoClient
 from datetime import datetime
-EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports")
-os.makedirs(EXPORTS_DIR, exist_ok=True)
+from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EXPORTS_DIR = PROJECT_ROOT / "exports"
+EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_new_excel_name(base_name="resumes", ext=".xlsx", base_dir: str = None):
     """

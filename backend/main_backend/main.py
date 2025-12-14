@@ -280,60 +280,6 @@ async def evaluate_resumes(
     }
 
 # --------------------------
-# 4️⃣ Export Endpoint
-# --------------------------
-# @router.post("/export_resumes_excel")
-# async def export_resumes_excel(req: ExportRequest, authorization: str = Header(None), x_model: str = Header(None), x_api_key: str = Header(None)):
-#     if not authorization:
-#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
-#     token = authorization.split(" ")[-1]
-#     user = get_user_from_token(token)
-#     if not user:
-#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
-#     try:
-#         user_base = None
-#         if user and user.get("username"):
-#             user_base = os.path.join(EXPORTS_DIR, user.get("username"))
-#             os.makedirs(user_base, exist_ok=True)
-
-#         if req.file_path:
-#             if user_base:
-#                 req.file_path = os.path.join(user_base, os.path.basename(req.file_path))
-#             else:
-#                 req.file_path = os.path.join(EXPORTS_DIR, os.path.basename(req.file_path))
-
-#         df = export_to_excel(
-#             resume_list=req.processed_resumes,
-#             mode=req.mode,
-#             file_path=req.file_path,
-#             sheet_name=req.sheet_name,
-#             base_dir=user_base
-#         )
-
-#         output_file = req.file_path
-#         if req.mode == "new_file" and not req.file_path:
-#             output_file = get_new_excel_name(base_dir=user_base)
-
-#         with open(output_file, "rb") as f:
-#             excel_bytes = f.read()
-#             excel_b64 = base64.b64encode(excel_bytes).decode("utf-8")
-
-#         return {
-#             "status": "success",
-#             "count": len(req.processed_resumes),
-#             "excel_file": excel_b64,
-#             "saved_path": output_file
-#         }
-
-#     except FileNotFoundError as e:
-#         return {"status": "error", "message": str(e)}
-#     except ValueError as e:
-#         return {"status": "error", "message": str(e)}
-#     except Exception as e:
-#         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
-
-# --------------------------
 # 1️⃣ List user export files API
 # --------------------------
 @router.get("/list_exports")

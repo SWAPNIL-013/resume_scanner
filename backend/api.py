@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from main_backend.main import router as main_router
 from fetch_from_db_backend.main import router as db_router
+from admin_backend.main import router as admin_router
 
 app = FastAPI(title="Unified Resume Scanner API")
 
@@ -16,6 +17,7 @@ app.add_middleware(
 
 app.include_router(main_router)
 app.include_router(db_router, prefix="/db")
+app.include_router(admin_router, prefix="/admin")
 
 @app.get("/")
 def root():

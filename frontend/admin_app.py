@@ -1,6 +1,9 @@
 import os
 import requests
 import streamlit as st
+def reset_admin_state():
+    for k in ["admin_page", "admin_last_search_query"]:
+        st.session_state.pop(k, None)
 
 def app():
     # --------------------------
@@ -12,10 +15,10 @@ def app():
         st.session_state.current_user = None
     if "show_auth" not in st.session_state:
         st.session_state.show_auth = True
-    if "page" not in st.session_state:
-        st.session_state.page = 1
-    if "last_search_query" not in st.session_state:
-        st.session_state.last_search_query = ""
+    if "admin_page" not in st.session_state:
+        st.session_state.admin_page = 1
+    if "admin_last_search_query" not in st.session_state:
+        st.session_state.admin_last_search_query = ""
 
     def force_rerun():
         try:
@@ -80,7 +83,7 @@ def app():
         headers = {"Authorization": f"Bearer {st.session_state.auth_token}"}
 
         try:
-            resp = requests.get("http://127.0.0.1:8000/admin/users", headers=headers)
+            resp = requests.get("http://127.0.0.1:8000/admin/admin/users", headers=headers)
             if resp.status_code == 200:
                 users = resp.json()
 
@@ -98,9 +101,9 @@ def app():
 
                 # Search box
                 search_query = st.text_input("🔍 Search username or role", "")
-                if search_query != st.session_state.last_search_query:
-                    st.session_state.page = 1
-                    st.session_state.last_search_query = search_query
+                if search_query != st.session_state.admin_last_search_query:
+                    st.session_state.admin_page = 1
+                    st.session_state.admin_last_search_query = search_query
 
                 filtered_users = [
                     u for u in users
@@ -109,7 +112,7 @@ def app():
 
                 PAGE_SIZE = 10
                 total_pages = max(1, (len(filtered_users) + PAGE_SIZE - 1) // PAGE_SIZE)
-                start_idx = (st.session_state.page - 1) * PAGE_SIZE
+                start_idx = (st.session_state.admin_page - 1) * PAGE_SIZE
                 page_users = filtered_users[start_idx:start_idx + PAGE_SIZE]
 
                 # Table header
@@ -140,11 +143,11 @@ def app():
 
                     if approved is not True:
                         if cols[3].button("✅", key=f"approve_{user['username']}", help="Approve user"):
-                            requests.post(f"http://127.0.0.1:8000/admin/approve/{user['username']}", headers=headers)
+                            requests.post(f"http://127.0.0.1:8000/admin/admin/approve/{user['username']}", headers=headers)
                             force_rerun()
                     if approved is not False:
                         if cols[3].button("❌", key=f"decline_{user['username']}", help="Decline user"):
-                            requests.post(f"http://127.0.0.1:8000/admin/deny/{user['username']}", headers=headers)
+                            requests.post(f"http://127.0.0.1:8000/admin/admin/deny/{user['username']}", headers=headers)
                             force_rerun()
 
                     role_col1, role_col2 = cols[4].columns([2, 1])
@@ -157,7 +160,7 @@ def app():
                     )
                     if role_col2.button("🔁", key=f"change_role_{user['username']}", help="Update Role"):
                         requests.post(
-                            f"http://127.0.0.1:8000/admin/change-role/{user['username']}?role={new_role}",
+                            f"http://127.0.0.1:8000/admin/admin/change-role/{user['username']}?role={new_role}",
                             headers=headers
                         )
                         force_rerun()
@@ -166,12 +169,12 @@ def app():
 
                 # Pagination controls
                 pag_cols = st.columns([1, 2, 1])
-                if pag_cols[0].button("⬅ Previous") and st.session_state.page > 1:
-                    st.session_state.page -= 1
+                if pag_cols[0].button("⬅ Previous") and st.session_state.admin_page > 1:
+                    st.session_state.admin_page -= 1
                     force_rerun()
-                pag_cols[1].markdown(f"Page {st.session_state.page} of {total_pages}")
-                if pag_cols[2].button("Next ➡") and st.session_state.page < total_pages:
-                    st.session_state.page += 1
+                pag_cols[1].markdown(f"Page {st.session_state.admin_page} of {total_pages}")
+                if pag_cols[2].button("Next ➡") and st.session_state.admin_page < total_pages:
+                    st.session_state.admin_page += 1
                     force_rerun()
             else:
                 st.error(f"Failed to fetch users: {resp.status_code}")

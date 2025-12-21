@@ -1,10 +1,13 @@
 
+from logging import PlaceHolder
 import os
 import base64
 import requests
 import streamlit as st
 import re
 import pymongo
+from utils import force_rerun, safe_rerun
+
 def reset_fetch_state():
     keys_to_clear = [
         "fetch_step",
@@ -93,68 +96,6 @@ def app():
             except Exception as e:
                 st.error(f"Exception fetching user info: {e}")
                 
-        def safe_rerun():
-            """Try to trigger a Streamlit rerun in a backwards/forwards-compatible way.
-
-            - Prefer st.experimental_rerun() where available.
-            - Otherwise change a query param (st.experimental_set_query_params) to force a rerun.
-            - If neither exists, toggle a session flag as a non-crashing fallback.
-            """
-            try:
-                fn = getattr(st, "experimental_rerun", None)
-                if callable(fn):
-                    fn()
-                    return
-
-                # Prefer the newer query params API. Assigning to st.query_params
-                # will update the URL params and force a rerun in modern Streamlit.
-                try:
-                    qp = getattr(st, "query_params", None)
-                    if qp is not None:
-                        import time
-
-                        st.query_params = {"_rerun": int(time.time())}
-                        return
-                except Exception:
-                    # fall through to session toggle fallback
-                    pass
-            except Exception as e:
-                # don't raise to UI; fall back to session toggle
-                print(f"safe_rerun helper failed: {e}")
-
-            # best-effort fallback: toggle a lightweight session-state flag
-            st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
-
-        def force_rerun():
-            """More aggressive rerun: try multiple methods to force Streamlit to refresh.
-
-            Tries, in order:
-            - st.experimental_rerun()
-            - st.experimental_set_query_params (if available)
-            - assignment to st.query_params
-            - toggling a session-state flag
-            """
-            try:
-                fn = getattr(st, "experimental_rerun", None)
-                if callable(fn):
-                    fn()
-                    return
-            except Exception:
-                pass
-
-            # try assigning st.query_params
-            try:
-                import time
-
-                qp = getattr(st, "query_params", None)
-                if qp is not None:
-                    st.query_params = {"_rerun": int(time.time())}
-                    return
-            except Exception:
-                pass
-
-            # fallback: toggle a session flag
-            st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
 
 
         username = st.session_state.get("current_user") or "Guest"
@@ -169,111 +110,66 @@ def app():
         # --------------------------
         # Sidebar: Account + LLM Settings
         # --------------------------
+        def logout():
+                st.session_state.auth_token = None
+                st.session_state.current_user = None
+                st.session_state.show_auth = True
+                st.session_state.user_role = None           # clear role if you track it
+                st.session_state.selected_app = None        # reset selected app card                
+                force_rerun()
         with st.sidebar:
+            # -------------------------
+            # Account
+            # -------------------------
             st.header("Account")
+            st.markdown(f"**Signed in as:** {st.session_state.current_user}")
+
+            st.button("Logout", key="btn_logout",on_click=logout)
+
             st.markdown("---")
+
+            # -------------------------
+            # LLM Settings (optional)
+            # -------------------------
             st.subheader("LLM Settings (optional)")
+
             model_choices = {
                 "Gemini 2.5 Flash (fast, recommended)": "gemini-2.5-flash",
                 "Gemini 2.5 Flash Lite (higher rpd)": "gemini-2.5-flash-lite",
                 "Gemini 1.5 Pro (balanced)": "gemini-1.5-pro",
                 "Gemini 1.0 (smaller, cheaper)": "gemini-1.0",
-                "Custom model name": "custom"
+                "Custom model name": "custom",
             }
-            model_label = st.selectbox("Choose model", list(model_choices.keys()), index=0, key="_llm_model_select")
+
+            model_label = st.selectbox(
+                "Choose model",
+                list(model_choices.keys()),
+                index=0,
+                key="_llm_model_select",
+            )
+
             selected_model_value = model_choices[model_label]
+
             if selected_model_value == "custom":
-                custom_model = st.text_input("Custom model name", key="_llm_model_custom")
+                custom_model = st.text_input(
+                    "Custom model name",
+                    key="_llm_model_custom",
+                )
                 model_value = custom_model or "gemini-2.5-flash"
             else:
                 model_value = selected_model_value
 
-            api_key_input = st.text_input("Model API Key (optional)", type="password", key="_llm_api_key")
+            api_key_input = st.text_input(
+                "Model API Key (optional)",
+                type="password",
+                key="_llm_api_key",
+            )
 
-
-
-
-            # persist choices in session state so other UI actions pick them up
+            # Persist settings (UNCHANGED)
             if model_value:
                 st.session_state.llm_model = model_value
             if api_key_input:
                 st.session_state.llm_api_key = api_key_input
-
-            # Put account controls inside a sidebar container so we can explicitly clear it
-            account_container = st.container()
-
-            supports_on_submit = False
-            # Callback to handle auth form submission. Using on_submit ensures
-            # session_state is updated immediately and allows us to call experimental_rerun
-        
-            def _handle_auth_submit():
-                auth_tab = st.session_state.get("auth_tab", "Login")
-                username = st.session_state.get("_auth_username", "")
-                password = st.session_state.get("_auth_password", "")
-                full_name = st.session_state.get("_auth_fullname", "")
-
-                try:
-                    if auth_tab == "Register":
-                        resp = requests.post(
-                            "http://127.0.0.1:8000/register",
-                            json={"username": username, "password": password, "full_name": full_name},
-                            timeout=10,
-                        )
-
-                        if resp.status_code == 200:
-                            st.success("✅ Registered! Waiting for admin approval.")
-                        else:
-                            st.error(resp.text)
-
-                    else:  # LOGIN
-                        resp = requests.post(
-                            "http://127.0.0.1:8000/login",
-                            json={"username": username, "password": password},
-                            timeout=10,
-                        )
-
-                        if resp.status_code == 200:
-                            token = resp.json()["access_token"]
-                            st.session_state.auth_token = token
-                            st.session_state.current_user = username
-                            st.session_state.show_auth = False
-                            force_rerun()
-
-                        elif resp.status_code == 403:
-                            st.error("⏳ Admin approval pending")
-
-                        else:
-                            st.error("❌ Invalid login")
-
-                except Exception as e:
-                    st.error(f"Auth error: {e}")
-
-
-            with account_container:
-                # Account controls
-                if not st.session_state.get("show_auth") and st.session_state.get("current_user"):
-                    # user already logged in -> show signed-in view
-                    st.markdown(f"**Signed in as:** {st.session_state.current_user}")
-                    if st.button("Logout", key="btn_logout"):
-                        # clear session state and remove the container contents immediately
-                        st.session_state.auth_token = None
-                        st.session_state.current_user = None
-                        st.session_state.show_auth = True
-                        st.success("Logged out")
-                        # best-effort immediate rerun
-                        force_rerun()
-                else:
-                    # Use plain widgets (not st.form) to avoid Streamlit form lifecycle quirks
-                    # Widgets write directly to st.session_state keys so the handler can read them.
-                    st.selectbox("Action", ("Login", "Register"), key="auth_tab")
-                    st.text_input("Username", key="_auth_username")
-                    st.text_input("Password", type="password", key="_auth_password")
-                    st.text_input("Full name (register only)", key="_auth_fullname")
-                    if st.button("Submit", key="btn_auth_submit"):
-                        _handle_auth_submit()
-                        # Trigger a rerun so the sidebar updates immediately
-                        force_rerun()
-                    # LLM settings are picked from session_state keys set by the sidebar
 
 
         # --------------------------
@@ -293,19 +189,20 @@ def app():
                 "MongoDB URL",
                 value=st.session_state.get(
                     "mongo_url",
-                    "mongodb+srv://resume_db_user:Swapnil%4013@cluster0.kg6kzel.mongodb.net/?appName=Cluster0",
-                ),
+                    ""
+                    
+                ),placeholder="Enter MongoDB Atlas Connection URL"
             )
 
             col1, col2 = st.columns(2)
 
             with col1:
                 db_name = st.text_input(
-                    "Database Name", value=st.session_state.get("db_name", "resume_db_new")
+                    "Database Name", value=st.session_state.get("db_name", ""), placeholder="Enter Databse Name"
                 )
             with col2:
                 collection_name = st.text_input(
-                    "Collection Name", value=st.session_state.get("collection_name", "resumes_1")
+                    "Collection Name", value=st.session_state.get("collection_name", ""),placeholder="Enter Collection Name"
                 )
 
         

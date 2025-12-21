@@ -1,6 +1,8 @@
 import os
 import requests
 import streamlit as st
+from utils import force_rerun
+
 def reset_admin_state():
     for k in ["admin_page", "admin_last_search_query"]:
         st.session_state.pop(k, None)
@@ -20,59 +22,25 @@ def app():
     if "admin_last_search_query" not in st.session_state:
         st.session_state.admin_last_search_query = ""
 
-    def force_rerun():
-        try:
-            st.experimental_rerun()
-        except Exception:
-            st.session_state["_needs_rerun"] = not st.session_state.get("_needs_rerun", False)
 
     # Sidebar: Login/Register and LLM Settings (optional)
+
+    def logout():
+            st.session_state.auth_token = None
+            st.session_state.current_user = None
+            st.session_state.show_auth = True  # keep for compatibility
+            st.session_state.user_role = None           # clear role if you track it
+            st.session_state.selected_app = None        # reset selected app card          
+            force_rerun()
     with st.sidebar:
         st.header("Account")
-        if not st.session_state.show_auth and st.session_state.current_user:
+
+        if st.session_state.current_user:
             st.markdown(f"**Signed in as:** {st.session_state.current_user}")
-            if st.button("Logout"):
-                st.session_state.auth_token = None
-                st.session_state.current_user = None
-                st.session_state.show_auth = True
-                force_rerun()
         else:
-            auth_tab = st.selectbox("Action", ("Login", "Register"), key="auth_tab")
-            username = st.text_input("Username", key="_auth_username")
-            password = st.text_input("Password", type="password", key="_auth_password")
-            full_name = ""
-            if auth_tab == "Register":
-                full_name = st.text_input("Full name", key="_auth_fullname")
-            if st.button("Submit"):
-                try:
-                    if auth_tab == "Register":
-                        resp = requests.post(
-                            "http://127.0.0.1:8000/register",
-                            json={"username": username, "password": password, "full_name": full_name},
-                            timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            st.success("✅ Registered! Waiting for admin approval.")
-                        else:
-                            st.error(resp.text)
-                    else:  # Login
-                        resp = requests.post(
-                            "http://127.0.0.1:8000/login",
-                            json={"username": username, "password": password},
-                            timeout=10,
-                        )
-                        if resp.status_code == 200:
-                            token = resp.json()["access_token"]
-                            st.session_state.auth_token = token
-                            st.session_state.current_user = username
-                            st.session_state.show_auth = False
-                            force_rerun()
-                        elif resp.status_code == 403:
-                            st.error("⏳ Admin approval pending")
-                        else:
-                            st.error("❌ Invalid login")
-                except Exception as e:
-                    st.error(f"Auth error: {e}")
+            st.warning("Not logged in")
+        st.button("Logout",key="btn_logout",on_click=logout)
+
 
     # Fetch current username or Guest
     username = st.session_state.get("current_user") or "Guest"
@@ -186,3 +154,51 @@ if __name__ == "__main__":
     app()
 
 
+
+
+    # with st.sidebar:
+    #     st.header("Account")
+    #     if not st.session_state.show_auth and st.session_state.current_user:
+    #         st.markdown(f"**Signed in as:** {st.session_state.current_user}")
+    #         if st.button("Logout"):
+    #             st.session_state.auth_token = None
+    #             st.session_state.current_user = None
+    #             st.session_state.show_auth = True
+    #             force_rerun()
+    #     else:
+    #         auth_tab = st.selectbox("Action", ("Login", "Register"), key="auth_tab")
+    #         username = st.text_input("Username", key="_auth_username")
+    #         password = st.text_input("Password", type="password", key="_auth_password")
+    #         full_name = ""
+    #         if auth_tab == "Register":
+    #             full_name = st.text_input("Full name", key="_auth_fullname")
+    #         if st.button("Submit"):
+    #             try:
+    #                 if auth_tab == "Register":
+    #                     resp = requests.post(
+    #                         "http://127.0.0.1:8000/auth/register",
+    #                         json={"username": username, "password": password, "full_name": full_name},
+    #                         timeout=10,
+    #                     )
+    #                     if resp.status_code == 200:
+    #                         st.success("✅ Registered! Waiting for admin approval.")
+    #                     else:
+    #                         st.error(resp.text)
+    #                 else:  # Login
+    #                     resp = requests.post(
+    #                         "http://127.0.0.1:8000/auth/login",
+    #                         json={"username": username, "password": password},
+    #                         timeout=10,
+    #                     )
+    #                     if resp.status_code == 200:
+    #                         token = resp.json()["access_token"]
+    #                         st.session_state.auth_token = token
+    #                         st.session_state.current_user = username
+    #                         st.session_state.show_auth = False
+    #                         force_rerun()
+    #                     elif resp.status_code == 403:
+    #                         st.error("⏳ Admin approval pending")
+    #                     else:
+    #                         st.error("❌ Invalid login")
+    #             except Exception as e:
+    #                 st.error(f"Auth error: {e}")

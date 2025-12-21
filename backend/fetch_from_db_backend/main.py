@@ -20,44 +20,6 @@ from pymongo import MongoClient
 router=APIRouter()
 
 
-@router.post("/register")
-async def register(user: RegisterRequest):
-    created = register_user(
-        user.username,
-        user.password,
-        user.full_name,
-        role="user"
-    )
-
-    if not created:
-        raise HTTPException(status_code=400, detail="User already exists")
-
-    return {"status": "success", "message": "User registered, waiting for admin approval"}
-
-
-@router.post("/login")
-async def login(user: LoginRequest):
-    user_data = authenticate_user(user.username, user.password)
-
-    if not user_data:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if user_data.get("error") == "not_approved":
-        raise HTTPException(status_code=403, detail="Admin approval pending")
-
-    if user_data.get("error") == "denied":
-        raise HTTPException(status_code=403, detail="Your request was denied")
-
-
-    token = create_access_token({
-        "username": user_data["username"],
-        "role": user_data.get("role", "user")
-    })
-
-    return {"access_token": token, "token_type": "bearer"}
-
-
-
 
 # --------------------------
 # 1️⃣ Connect to MongoDB

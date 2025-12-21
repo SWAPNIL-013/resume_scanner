@@ -113,64 +113,6 @@ def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini
 #     print(f"\n----- Total Experience (years) -----\n{total_exp_years:.2f} years")
 
 
-# # ------------------------------Generate JD JSON------------------------------
-# def generate_jd_json(jd_text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> dict:
-#     """
-#     Dynamically extract fields from a Job Description text using LLM.
-#     Output: Flexible JSON with title + any relevant attributes (skills, experience, etc.)
-#     """
-#     prompt = f"""
-#     You are an intelligent JD parser. Extract ALL relevant and meaningful fields from the given job description. 
-#     Always return a valid JSON object.
-
-#     Example structure (but it can vary dynamically):
-#     {{
-#         "title": "Data Scientist",
-#         "skills": ["Python", "SQL", "ML"],
-#         "education": "Bachelor's in Computer Science",
-#         "experience": "2-4 years",
-#         "responsibilities": ["Build ML models", "Analyze data"],
-#         "certifications": ["AWS ML Foundations"],
-#         "tools": ["TensorFlow", "PowerBI"]
-#     }}
-
-#     Guidelines:
-#     - Keep keys concise and descriptive (e.g., skills, education, tools, domain, etc.).
-#     - Include only fields relevant to job qualifications.
-#     - Ensure pure JSON, no markdown, no commentary.
-
-#     Job Description Text:
-#     {jd_text}
-#     """
-
-#     # ✅ Use centralized LLM caller (handles retries & errors)
-#     llm_result = call_llm(prompt, model=model, api_key=api_key)
-
-#     if isinstance(llm_result, dict) and llm_result.get("error"):
-#         print(f"JD parsing failed: {llm_result.get('error')}")
-#         return {}
-
-#     # ✅ Parse JSON safely
-#     if isinstance(llm_result, dict):
-#         parsed = llm_result
-#     else:
-#         try:
-#             parsed = json.loads(llm_result)
-#         except json.JSONDecodeError:
-#             print("JD parsing failed: LLM returned non-JSON response")
-#             return {}
-
-#     # ✅ Normalize: title separate, rest dynamic
-#     title = parsed.get("title", None)
-#     fields = {k: v for k, v in parsed.items() if k.lower() != "title"}
-
-#     try:
-#         jd = JobDescriptionSchema(title=title, fields=fields)
-#         return jd.model_dump()
-#     except Exception as e:
-#         print(f"JD schema validation failed: {e}")
-#         return {"title": title, "fields": fields}
-
 def generate_jd_json(jd_text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> dict:
     prompt = f"""
     You are an intelligent JD parser. Extract ALL relevant and meaningful fields from the given job description. 
@@ -235,6 +177,9 @@ if __name__ == "__main__":
     jd_json = generate_jd_json(sample_jd)
     print("Parsed JD JSON:")
     print(json.dumps(jd_json, indent=2))
+
+
+
 
 def generate_score(
     resume_json: dict,
@@ -367,3 +312,131 @@ if __name__ == "__main__":
     print("Evaluating...\n")
     result = generate_score(resume_json, jd_json, weights, resume_total_experience)
     print(json.dumps(result, indent=2))
+
+
+
+
+
+# import json
+
+# def generate_score(
+#     resume_json: dict,
+#     jd_json: dict,
+#     weights: dict,
+#     resume_total_experience: float,
+#     *,
+#     api_key: str = None,
+#     model: str = "gemini-2.5-flash"
+# ) -> dict:
+#     """
+#     Scores a resume against a dynamic JD structure.
+#     - Field scores (0–100) are produced by LLM
+#     - Total score (0–100) is computed in backend using normalized weights
+#     """
+
+#     # -----------------------------
+#     # 1️⃣ Extract JD fields dynamically
+#     # -----------------------------
+#     field_list = list(jd_json.keys())
+
+#     # -----------------------------
+#     # 2️⃣ LLM scoring instructions (NO TOTAL CALCULATION)
+#     # -----------------------------
+#     field_scoring_instructions = "\n".join(
+#         [
+#             f"- {field}: score this category from 0–100 based on semantic match quality."
+#             for field in field_list
+#         ]
+#     )
+
+#     prompt = f"""
+# You are a resume scoring assistant.
+
+# Compare the following resume JSON with the job description JSON.
+
+# Resume JSON:
+# {json.dumps(resume_json, indent=2)}
+
+# JD JSON:
+# {json.dumps(jd_json, indent=2)}
+
+# The candidate has {resume_total_experience:.2f} years of experience.
+
+# Fields to evaluate:
+# {json.dumps(field_list, indent=2)}
+
+# Instructions:
+# 1. Evaluate EACH field listed above independently.
+# {field_scoring_instructions}
+
+# 2. If a field like "experience" contains years, score it as:
+#    - If candidate_exp >= jd_exp → 100
+#    - Else → (candidate_exp / jd_exp) × 100 (rounded to 2 decimals)
+#    - If JD has no experience requirement, estimate relative to resume content
+
+# 3. DO NOT compute total score.
+# 4. Add remarks for missing qualifications or strong matches.
+
+# 5. Additionally classify skills into:
+#    - matched_skills
+#    - missing_skills
+#    - other_skills
+
+# Return STRICTLY valid JSON in this format:
+# {{
+#   "field_scores": {{
+#     "<field_name>": <float 0-100>
+#   }},
+#   "remarks": ["string"],
+#   "matched_skills": ["string"],
+#   "missing_skills": ["string"],
+#   "other_skills": ["string"]
+# }}
+# """
+
+#     # -----------------------------
+#     # 3️⃣ Call LLM
+#     # -----------------------------
+#     result = call_llm(prompt, model=model, api_key=api_key)
+
+#     # -----------------------------
+#     # 4️⃣ LLM error fallback
+#     # -----------------------------
+#     if isinstance(result, dict) and result.get("error"):
+#         err = result["error"]
+#         return {
+#             "field_scores": {field: 0.0 for field in field_list},
+#             "total": 0.0,
+#             "remarks": [f"LLM error: {err.get('message', str(err))}"],
+#             "matched_skills": [],
+#             "missing_skills": [],
+#             "other_skills": []
+#         }
+
+#     # -----------------------------
+#     # 5️⃣ Backend total score calculation (NORMALIZED)
+#     # -----------------------------
+#     field_scores = result.get("field_scores", {})
+
+#     total_weight = sum(weights.values()) or 1.0
+
+#     total_score = 0.0
+#     for field, score in field_scores.items():
+#         weight = weights.get(field, 0.0)
+#         normalized_weight = weight / total_weight
+#         total_score += float(score) * normalized_weight
+
+#     # Clamp safety
+#     total_score = max(0.0, min(100.0, round(total_score, 2)))
+
+#     # -----------------------------
+#     # 6️⃣ Final response (PIPELINE SAFE)
+#     # -----------------------------
+#     return {
+#         "field_scores": field_scores,
+#         "total": total_score,
+#         "remarks": result.get("remarks", []),
+#         "matched_skills": result.get("matched_skills", []),
+#         "missing_skills": result.get("missing_skills", []),
+#         "other_skills": result.get("other_skills", [])
+#     }

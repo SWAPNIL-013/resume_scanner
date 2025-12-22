@@ -95,12 +95,15 @@ CARD_STYLE = """
 # Navbar (HOME ONLY)
 # --------------------------
 def render_navbar():
+    user = st.session_state.get("current_user", "Guest")
+    role = st.session_state.get("user_role", "User")
+
     st.markdown(
         f"""
         <div class="navbar">
-            <div class="nav-left">Resume Screening System</div>
+            <div class="nav-left">Resume Screening Dashboard</div>
             <div class="nav-right">
-                {st.session_state.get("current_user")} ({st.session_state.get("user_role")})
+                {user} ({role})
             </div>
         </div>
         """,
@@ -129,7 +132,7 @@ def show_homepage():
     st.markdown(CARD_STYLE, unsafe_allow_html=True)
 
     # st.markdown(
-    #     '<div class="full-width-title">Resume Screening System</div>',
+    #     '<div class="full-width-title">Resume Screening Dashboard</div>',
     #     unsafe_allow_html=True
     # )
     st.markdown(

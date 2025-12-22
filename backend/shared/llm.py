@@ -1,8 +1,8 @@
 import json
 from typing import Dict
 from pydantic import ValidationError
-from shared.schema import ResumeSchema,JobDescriptionSchema
-from shared.utils import add_experience_duration_readable, call_llm
+from backend.shared.schema import ResumeSchema,JobDescriptionSchema
+from backend.shared.utils import add_experience_duration_readable, call_llm
 
 # ----------------- Generate Resume JSON -----------------
 def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> Dict:

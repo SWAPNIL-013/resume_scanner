@@ -2,8 +2,8 @@
 # ✅ REGISTER
 # -----------------------------
 from fastapi import HTTPException,APIRouter, Header
-from shared.auth import authenticate_user, create_access_token, get_user_from_token, register_user
-from shared.schema import LoginRequest, RegisterRequest
+from backend.shared.auth import authenticate_user, create_access_token, get_user_from_token, register_user
+from backend.shared.schema import LoginRequest, RegisterRequest
 
 router=APIRouter()
 

@@ -1,8 +1,8 @@
-from fetch_from_db_backend.db_fetcher import fetch_resumes
-from shared.utils import format_experience_years, total_experience_from_resume
+from backend.fetch_from_db_backend.db_fetcher import fetch_resumes
+from backend.shared.utils import format_experience_years, total_experience_from_resume
 import json
-from shared.parser import extract_text_and_links
-from shared.llm import generate_resume_json,generate_jd_json,generate_score
+from backend.shared.parser import extract_text_and_links
+from backend.shared.llm import generate_resume_json,generate_jd_json,generate_score
 
 
 

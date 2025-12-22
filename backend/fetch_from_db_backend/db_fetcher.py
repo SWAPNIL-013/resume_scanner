@@ -1,6 +1,6 @@
 # db_fetcher.py
 from pymongo import MongoClient
-from shared.schema import ResumeDBSchema
+from backend.shared.schema import ResumeDBSchema
 
 def clean_mongo_doc(doc: dict) -> dict:
     """

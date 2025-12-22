@@ -1,36 +1,29 @@
-import json
-import shutil
-import tempfile
 from fastapi import APIRouter, FastAPI, UploadFile, File, Query, Body, Header, HTTPException, status
 from typing import List
 
 from openpyxl import load_workbook
-from shared.parser import extract_text_from_jd
-from shared.schema import ExportRequest, LoginRequest, RegisterRequest
-from shared.auth import register_user, authenticate_user, create_access_token, get_user_from_token
-from shared.exporter import export_to_excel, get_new_excel_name, EXPORTS_DIR,export_to_mongo
-from shared.llm import generate_jd_json
+from backend.shared.parser import extract_text_from_jd
+from backend.shared.schema import ExportRequest,RegisterRequest,LoginRequest
+from backend.shared.auth import  approve_user, deny_user, get_all_users, get_pending_users,register_user, authenticate_user, create_access_token, get_user_from_token, update_user_role
+from backend.shared.pipeline import run_pipeline
+from backend.shared.exporter import export_to_excel, get_new_excel_name, EXPORTS_DIR,export_to_mongo
+from backend.shared.llm import generate_jd_json
+import tempfile
+import shutil
+from fastapi.responses import JSONResponse
 import base64
 import os
-from shared.pipeline import run_pipeline_db
-from pymongo import MongoClient
-
-
-
+import json
 router=APIRouter()
 
 
 
+
 # --------------------------
-# 1️⃣ Connect to MongoDB
+# 1️⃣ Upload Resumes Only
 # --------------------------
-@router.post("/connect_mongo")
-async def connect_mongo(
-    mongo_url: str = Body(..., description="MongoDB connection URI"),
-    db_name: str = Body(..., description="Database name"),
-    collection_name: str = Body(..., description="Collection name"),
-    authorization: str = Header(None)
-):
+@router.post("/upload_resumes_only")
+async def upload_resumes_only(authorization: str = Header(None), files: List[UploadFile] = File(...), x_model: str = Header(None), x_api_key: str = Header(None)):
     if not authorization:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
     token = authorization.split(" ")[-1]
@@ -38,16 +31,33 @@ async def connect_mongo(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    try:
-        client = MongoClient(mongo_url)
-        db = client[db_name]
-        collection = db[collection_name]
-        resume_count = collection.count_documents({})
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    print(f"Connection successful : Resume Count = {resume_count}")
-    return {"status": "success", "resume_count": resume_count}
+    uploaded_paths = []
 
+    # create per-user upload dir
+    user_dir = None
+    if user and user.get("username"):
+        user_dir = os.path.join(tempfile.gettempdir(), "resume_scanner_uploads", user.get("username"))
+        os.makedirs(user_dir, exist_ok=True)
+
+    for file in files:
+        try:
+            if user_dir:
+                dest = os.path.join(user_dir, file.filename)
+                with open(dest, "wb") as out_f:
+                    shutil.copyfileobj(file.file, out_f)
+                uploaded_paths.append(dest)
+            else:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
+                    shutil.copyfileobj(file.file, tmp)
+                    uploaded_paths.append(tmp.name)
+        except Exception as e:
+            print(f"⚠️ Failed to save {file.filename}: {e}")
+            continue
+
+    if not uploaded_paths:
+        return {"status": "error", "message": "No valid resumes uploaded."}
+
+    return {"status": "success", "uploaded_paths": uploaded_paths}
 
 
 @router.post("/upload_jd")
@@ -97,53 +107,50 @@ async def upload_jd(
         except:
             pass
 
-
-
-
-# --------------------------
-# 3️⃣ Evaluate Resumes
-# --------------------------
-@router.post("/evaluate_resumes_db")
-async def evaluate_resumes_db(
-    mongo_url: str = Body(...),
-    db_name: str = Body(...),
-    collection_name: str = Body(...),
-    jd_data: dict = Body(None),
+@router.post("/evaluate_resumes")
+async def evaluate_resumes(
+    uploaded_paths: List[str] = Body(..., description="List of uploaded resume file paths"),
+    jd_data: dict = Body(None, description="Contains jd_json + weights"),
     authorization: str = Header(None),
     x_model: str = Header(None),
-    x_api_key: str = Header(None),
+    x_api_key: str = Header(None)
 ):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
+
     token = authorization.split(" ")[-1]
     user = get_user_from_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    model = x_model or (jd_data and jd_data.get("model")) or "gemini-2.5-flash"
-    api_key = x_api_key or (jd_data and jd_data.get("api_key"))
+    processed_resumes = []
 
+    model = x_model or "gemini-2.5-flash"
+    api_key = x_api_key
+
+    # ✅ JD JSON + weights now come directly from frontend
     jd_json = jd_data.get("jd_json") if jd_data else None
     weights = jd_data.get("weights") if jd_data else None
 
     if jd_json:
         print("✅ JD JSON received — scoring enabled\n")
     else:
-        print("⚙️ No JD provided — try again")
+        print("⚙️ No JD provided — resume parsing only mode\n")
 
-    try:
-        processed_resumes = run_pipeline_db(
-            mongo_url=mongo_url,
-            db_name=db_name,
-            collection_name=collection_name,
-            weights=weights,
-            jd_json=jd_json,
-            username=user.get("username"),
-            api_key=api_key,
-            model=model,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
+    for path in uploaded_paths:
+        try:
+            resume_dict = run_pipeline(
+                resume_file_path=path,
+                weights=weights,
+                jd_json=jd_json,
+                username=user.get("username"),
+                api_key=api_key,
+                model=model
+            )
+            processed_resumes.append(resume_dict)
+
+        except Exception as e:
+            print(f"⚠️ Failed to process {path}: {e}")
 
     if not processed_resumes:
         return {"status": "error", "message": "No valid resumes to process."}
@@ -152,11 +159,8 @@ async def evaluate_resumes_db(
         "status": "success",
         "count": len(processed_resumes),
         "data": processed_resumes,
-        "jd_mode": "enabled" if jd_data and jd_data.get("jd_text") else "disabled",
+        "jd_mode": "enabled" if jd_json else "disabled"
     }
-
-
-
 
 # --------------------------
 # 1️⃣ List user export files API

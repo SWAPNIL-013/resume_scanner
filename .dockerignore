@@ -1,0 +1,31 @@
+# Python virtual environments
+.venv/
+venv/
+
+# Cache files
+__pycache__/
+*.pyc
+
+# IDE/editor settings
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Private data (resumes)
+samples/
+*.pdf
+*.docx
+
+# Environment variables file
+.env
+
+# Exported files
+exports/
+
+# Test script
+test.py
+
+# Temporary job description files
+temp_jd/

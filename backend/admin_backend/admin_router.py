@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Header
-from shared.auth import approve_user, authenticate_user, create_access_token, deny_user, get_all_users, get_pending_users, get_user_from_token, register_user, update_user_role
-from shared.schema import LoginRequest, RegisterRequest
+from backend.shared.auth import approve_user, deny_user, get_all_users, get_pending_users, get_user_from_token,update_user_role
+
 
 
 router=APIRouter()

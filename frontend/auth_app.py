@@ -169,7 +169,7 @@ import requests
 import streamlit as st
 from utils import force_rerun
 
-def auth_page():
+def auth_app():
     # ---------- Center layout ----------
     left, center, right = st.columns([1, 2, 1])
 
@@ -223,7 +223,7 @@ def login(username, password):
     resp = requests.post(
         "http://127.0.0.1:8000/auth/login",
         json={"username": username, "password": password},
-        timeout=10,
+        timeout=20,
     )
     if resp.status_code == 200:
         st.session_state.auth_token = resp.json()["access_token"]
@@ -243,7 +243,7 @@ def register(username, password, full_name):
             "password": password,
             "full_name": full_name,
         },
-        timeout=10,
+        timeout=20,
     )
     if resp.status_code == 200:
         st.success("✅ Registered. Wait for admin approval.")

@@ -1,9 +1,9 @@
 import streamlit as st
-from auth_app import auth_page
-import main_app
+from auth_app import auth_app
+import upload_app as upload_app
 import fetch_from_db_app
 import admin_app
-from main_app import force_rerun
+from utils import force_rerun
 
 st.set_page_config(layout="wide")
 
@@ -246,7 +246,7 @@ def show_homepage():
 def main():
     # 🔒 AUTH GATE — FIRST
     if not st.session_state.get("auth_token"):
-        auth_page()
+        auth_app()
         return
 
     if "selected_app" not in st.session_state:
@@ -259,7 +259,7 @@ def main():
             if st.session_state.selected_app == "fetch":
                 fetch_from_db_app.reset_fetch_state()
             elif st.session_state.selected_app == "upload":
-                main_app.reset_upload_state()
+                upload_app.reset_upload_state()
             elif st.session_state.selected_app == "admin":
                 admin_app.reset_admin_state()
             st.session_state.selected_app = None
@@ -268,7 +268,7 @@ def main():
         st.button("⬅️ Back to Home", on_click=back_to_home)
 
         if st.session_state.selected_app == "upload":
-            main_app.app()
+            upload_app.app()
         elif st.session_state.selected_app == "fetch":
             fetch_from_db_app.app()
         elif st.session_state.selected_app == "admin":

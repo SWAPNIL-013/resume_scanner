@@ -1,5 +1,5 @@
 # helper for experience calculation
-from datetime import datetime
+from datetime import datetime, timezone
 def calculate_experience_readable(start_date: str, end_date: str) -> str:
     """
     Calculate human-readable duration between two dates.
@@ -19,11 +19,15 @@ def calculate_experience_readable(start_date: str, end_date: str) -> str:
                 "%b %Y",    # Jun 2024
                 "%B %Y",    # June 2024
                 "%Y %b",    # 2024 Jun
-                "%Y %B"     # 2024 June
+                "%Y %B",    # 2024 June
+                "%Y"
             ]
             for fmt in formats:
                 try:
-                    return datetime.strptime(date_str, fmt)
+                    dt=datetime.strptime(date_str,fmt)
+                    if fmt == "%Y":
+                        dt=dt.replace(month=1)
+                    return dt
                 except ValueError:
                     continue
             return None
@@ -40,7 +44,7 @@ def calculate_experience_readable(start_date: str, end_date: str) -> str:
                 return ""
 
         # Duration in months (do +1 for inclusive)
-        months = (end.year - start.year) * 12 + (end.month - start.month) # + 1
+        months = (end.year - start.year) * 12 + (end.month - start.month)+ 1
         years, months = divmod(months, 12)
 
         parts = []
@@ -248,3 +252,50 @@ def call_llm(prompt: str, model: str = "gemini-2.5-flash", *, api_key: str = Non
 
     # Fallback structured error if loop exits unexpectedly
     return {"error": {"message": str(last_exc), "type": "llm_error"}}
+
+
+# Pipeline Helper
+# backend/shared/evaluation_helper.py
+from datetime import datetime
+from typing import Dict, Any
+
+
+def build_evaluation(scored_result: Dict[str, Any], jd_json: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "jd_id": jd_json.get("id") or jd_json.get("title"),
+        "jd_title": jd_json.get("title", ""),
+        "score": scored_result.get("total"),
+        "overall_summary": scored_result.get("overall_summary", []),
+        "matched_skills": scored_result.get("matched_skills", []),
+        "missing_skills": scored_result.get("missing_skills", []),
+        "other_skills": scored_result.get("other_skills", []),
+        "scoring_breakdown": scored_result.get("field_scores", {}),
+        "evaluated_at":datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    }
+
+# scoring helper 
+def compute_total_score(field_scores: dict, weights: dict) -> float:
+    total_weight = 0.0
+
+    for field in field_scores:
+        w = weights.get(field, 0)
+        if isinstance(w, (int, float)) and w > 0:
+            total_weight += w
+
+    if total_weight == 0:
+        return 0.0
+
+    total_score = 0.0
+    for field, score in field_scores.items():
+        weight = weights.get(field, 0)
+        if weight <= 0:
+            continue
+
+        safe_score = max(0.0, min(100.0, float(score)))
+        normalized_weight = weight / total_weight
+        # print(f"NORMALIZED WEIGHT FOR {field}(Score : {score}) : {weight}/{total_weight} = {round(normalized_weight,2)}")
+        total_score += safe_score * normalized_weight
+        # print(f"CURRENT SCORE : {total_score}")
+
+    return round(total_score, 2)

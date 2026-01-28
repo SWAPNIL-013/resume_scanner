@@ -3,9 +3,13 @@ import requests
 import streamlit as st
 from utils import force_rerun
 
+# def reset_admin_state():
+#     for k in ["admin_page", "admin_last_search_query"]:
+#         st.session_state.pop(k, None)
 def reset_admin_state():
-    for k in ["admin_page", "admin_last_search_query"]:
-        st.session_state.pop(k, None)
+    st.session_state.admin_page = 1
+    st.session_state.admin_last_search_query = ""
+
 
 def app():
     # --------------------------

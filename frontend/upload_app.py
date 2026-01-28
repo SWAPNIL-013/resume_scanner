@@ -3,24 +3,44 @@ import base64
 import requests
 import streamlit as st
 from utils import force_rerun
+# def reset_upload_state():
+#     keys_to_clear = [
+#         "upload_step",
+#         "upload_uploaded_files",
+#         "upload_uploaded_paths",
+#         "upload_jd_text",
+#         "upload_weights",
+#         "upload_evaluation_done",
+#         "upload_evaluation_response",
+#         "upload_results",
+#         "upload_excel_file",
+#         "upload_jd_data",
+#         "upload_save_mode",
+#         "upload_jd_fields",
+#         "upload_jd_json"
+#     ]
+#     for k in keys_to_clear:
+#         st.session_state.pop(k, None)
 def reset_upload_state():
-    keys_to_clear = [
-        "upload_step",
-        "upload_uploaded_files",
-        "upload_uploaded_paths",
-        "upload_jd_text",
-        "upload_weights",
-        "upload_evaluation_done",
-        "upload_evaluation_response",
-        "upload_results",
-        "upload_excel_file",
-        "upload_jd_data",
-        "upload_save_mode",
-        "upload_jd_fields",
-        "upload_jd_json"
-    ]
-    for k in keys_to_clear:
-        st.session_state.pop(k, None)
+    st.session_state.upload_step = 1
+    st.session_state.upload_uploaded_files = []
+    st.session_state.upload_uploaded_paths = []
+    st.session_state.upload_jd_text = ""
+    st.session_state.upload_weights = {
+        "skills": 0.4,
+        "experience": 0.3,
+        "education": 0.2,
+        "certifications": 0.1
+    }
+    st.session_state.upload_evaluation_done = False
+    st.session_state.upload_evaluation_response = None
+    st.session_state.upload_results = None
+    st.session_state.upload_excel_file = None
+    st.session_state.upload_jd_data = None
+    st.session_state.upload_save_mode = None
+    st.session_state.upload_jd_fields = []
+    st.session_state.upload_jd_json = {}
+
 
 
 def app():
@@ -105,6 +125,7 @@ def app():
             st.subheader(f"👋 Welcome, {username}!")
         with top_col2:
             if st.button("🔄", help="Refresh app"):
+                reset_upload_state()
                 force_rerun()
 
 
@@ -361,28 +382,55 @@ def app():
             else:
                 st.error(f"❌ Evaluation failed: {response.text}")
 
+     
         # --------------------------
         # Step 4: Display Results
         # --------------------------
+        # sorted_results = sorted(
+        # st.session_state.fetch_results,
+        # key=lambda r: r.get("score", 0),
+        # reverse=True
+        # )
+
         if st.session_state.upload_step >= 4 and st.session_state.upload_results:
             st.subheader("Review Evaluation Results")
+            # sorted_results = sorted(
+            #     st.session_state.upload_results,
+            #     key=lambda r: r.get("evaluations", [{}])[-1].get("score", 0),
+            #     reverse=True)
+            def get_latest_score(resume):
+                evaluations = resume.get("evaluations", [])
+                if evaluations:
+                    return evaluations[-1].get("score", 0)
+                else:
+                    return 0  # or some default score when no evaluation exists
 
-            for resume in st.session_state.upload_results:
-                name = resume.get("name", "Unnamed Candidate")
-                with st.expander(f"▶ {name}"):
-                    st.markdown(f"**Email:** {resume.get('email','')}")
-                    st.markdown(f"**Phone:** {resume.get('phone','')}")
-                    st.markdown(f"**Location:** {resume.get('location','')}")
+            sorted_results = sorted(
+                st.session_state.upload_results,
+                key=get_latest_score,
+                reverse=True
+)
 
+            for resume in sorted_results:
+                resume_json = resume.get("resume_json", {})
+                evaluations = resume.get("evaluations", [])
+                latest_eval = evaluations[-1] if evaluations else {}
+
+                name = resume_json.get("name", "Unnamed Candidate").title()
+                score=latest_eval.get("score","N/A")
+                with st.expander(f"▶ {name} | Score: {score}"):
+                    st.markdown(f"**Email:** {resume_json.get('email','')}")
+                    st.markdown(f"**Phone:** {resume_json.get('phone','')}")
+                    st.markdown(f"**Location:** {resume_json.get('location','')}")
                     # URLs
-                    urls = resume.get("urls", [])
+                    urls = resume_json.get("urls", [])
                     if urls:
                         st.markdown("**URLs:**")
                         for url in urls:
                             st.markdown(f"- {url}")
 
                     # Skills
-                    skills = resume.get("skills", [])
+                    skills = resume_json.get("skills", [])
                     if skills:
                         st.markdown("**Skills:**")
                         skill_cards = " ".join([
@@ -393,7 +441,7 @@ def app():
                         st.markdown(skill_cards, unsafe_allow_html=True)
 
                     # Education
-                    education = resume.get("education", [])
+                    education = resume_json.get("education", [])
                     if education:
                         st.markdown("**Education:**")
                         edu_cards = " ".join([
@@ -405,7 +453,7 @@ def app():
                         st.markdown(edu_cards, unsafe_allow_html=True)
 
                     # Experience
-                    experience = resume.get("experience", [])
+                    experience = resume_json.get("experience", [])
                     if experience:
                         st.markdown("**Experience:**")
                         exp_cards = " ".join([
@@ -418,7 +466,7 @@ def app():
                         st.markdown(exp_cards, unsafe_allow_html=True)
 
                     # Projects
-                    projects = resume.get("projects", [])
+                    projects = resume_json.get("projects", [])
                     if projects:
                         st.markdown("**Projects:**")
                         proj_cards = " ".join([
@@ -431,7 +479,7 @@ def app():
                         st.markdown(proj_cards, unsafe_allow_html=True)
 
                     # Certifications
-                    certs = resume.get("certifications", [])
+                    certs = resume_json.get("certifications", [])
                     if certs:
                         st.markdown("**Certifications:**")
                         cert_cards = " ".join([
@@ -448,7 +496,7 @@ def app():
                     st.markdown("### 📊 Summary")
 
                     # Matched Skills
-                    matched = resume.get("matched_skills", [])
+                    matched = latest_eval.get("matched_skills", [])
                     if matched:
                         st.markdown("**✅ Matched Skills (from JD):**")
                         matched_cards = " ".join([
@@ -459,7 +507,7 @@ def app():
                         st.markdown(matched_cards, unsafe_allow_html=True)
 
                     # Missing Skills
-                    missing = resume.get("missing_skills", [])
+                    missing = latest_eval.get("missing_skills", [])
                     if missing:
                         st.markdown("**⚠️ Missing Skills (from JD):**")
                         missing_cards = " ".join([
@@ -470,7 +518,7 @@ def app():
                         st.markdown(missing_cards, unsafe_allow_html=True)
 
                     # Other Skills
-                    other = resume.get("other_skills", [])
+                    other = latest_eval.get("other_skills", [])
                     if other:
                         st.markdown("**🟡 Other Skills (not in JD):**")
                         other_cards = " ".join([
@@ -481,7 +529,7 @@ def app():
                         st.markdown(other_cards, unsafe_allow_html=True)
 
                     # Total Experience
-                    exp_years = resume.get("total_experience_years", "N/A")
+                    exp_years = resume_json.get("total_experience_years", "N/A")
                     st.markdown(
                         f"<span style='display:inline-block;background:#fff8e1;color:#f57f17;"
                         f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
@@ -490,7 +538,7 @@ def app():
                     )
 
                     # Overall Score
-                    score = resume.get("score", "N/A")
+                    score = latest_eval.get("score", "N/A")
                     st.markdown(
                         f"<span style='display:inline-block;background:#e8f5e9;color:#1b5e20;"
                         f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
@@ -499,7 +547,7 @@ def app():
                     )
 
                     # Remarks
-                    remarks = resume.get("remarks", [])
+                    remarks = latest_eval.get("overall_summary", [])
                     if remarks:
                         st.markdown("**💬 Remarks / Feedback:**")
                         remark_cards = " ".join([
@@ -510,7 +558,7 @@ def app():
                         st.markdown(remark_cards, unsafe_allow_html=True)
 
                     # Scoring Breakdown
-                    breakdown = resume.get("scoring_breakdown", {})
+                    breakdown = latest_eval.get("scoring_breakdown", {})
                     if breakdown:
                         st.markdown("**📈 Scoring Breakdown:**")
                         breakdown_cards = " ".join([
@@ -520,7 +568,11 @@ def app():
                         ])
                         st.markdown(breakdown_cards, unsafe_allow_html=True)
 
+
   
+        # --------------------------
+        # Step 5: Export Results
+        # --------------------------
 
         def fetch_user_export_files():
             try:

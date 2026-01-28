@@ -2,7 +2,7 @@ import json
 from typing import Dict
 from pydantic import ValidationError
 from backend.shared.schema import ResumeSchema,JobDescriptionSchema
-from backend.shared.utils import add_experience_duration_readable, call_llm
+from backend.shared.utils import add_experience_duration_readable, call_llm, compute_total_score
 
 # ----------------- Generate Resume JSON -----------------
 def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini-2.5-flash") -> Dict:
@@ -35,7 +35,7 @@ def generate_resume_json(text: str, *, api_key: str = None, model: str = "gemini
             {{"degree": "string","institution": "string","year": "string"}}
         ],
         "experience": [
-            {{"company": "string","role": "string","start_date": "YYYY-MM or empty string","end_date": "YYYY-MM, Present, or empty string","description": "string"}}
+            {{"company": "string","role": "string","start_date": "YYYY-MM or empty string","end_date": "YYYY-MM, Present, or empty string"}}
         ],
         "certifications": ["list of certifications"]
     }}
@@ -154,30 +154,29 @@ def generate_jd_json(jd_text: str, *, api_key: str = None, model: str = "gemini-
             print("JD parsing failed: LLM returned non-JSON response")
             return {}
 
-    # ✅ ✅ ✅ RETURN FLAT JSON DIRECTLY (NO SCHEMA, NO FIELDS)
-    print("✅ Final JD JSON:")
-    print(parsed)
+    # # ✅ ✅ ✅ RETURN FLAT JSON DIRECTLY (NO SCHEMA, NO FIELDS)
+    # print("✅ Final JD JSON:")
+    # print(parsed)
 
     return parsed
 
-# ---- Local Test -------
-if __name__ == "__main__":
-    sample_jd = """
-    Job Title: Data Scientist
-    Skills: Python, SQL, Machine Learning, Deep Learning
-    Education: B.Tech in Computer Science or equivalent
-    Experience: 2-4 years
-    Responsibilities:
-    - Build ML models
-    - Analyze data and generate insights
-    - Collaborate with cross-functional teams
-    Certifications: AWS Certified Machine Learning
-    Tools: TensorFlow, PowerBI
-    """
-    jd_json = generate_jd_json(sample_jd)
-    print("Parsed JD JSON:")
-    print(json.dumps(jd_json, indent=2))
-
+# # ---- Local Test -------
+# if __name__ == "__main__":
+#     sample_jd = """
+#     Job Title: Data Scientist
+#     Skills: Python, SQL, Machine Learning, Deep Learning
+#     Education: B.Tech in Computer Science or equivalent
+#     Experience: 2-4 years
+#     Responsibilities:
+#     - Build ML models
+#     - Analyze data and generate insights
+#     - Collaborate with cross-functional teams
+#     Certifications: AWS Certified Machine Learning
+#     Tools: TensorFlow, PowerBI
+#     """
+#     jd_json = generate_jd_json(sample_jd)
+#     print("Parsed JD JSON:")
+#     print(json.dumps(jd_json, indent=2))
 
 
 
@@ -185,76 +184,69 @@ def generate_score(
     resume_json: dict,
     jd_json: dict,
     weights: dict,
-    resume_total_experience: float,
+    resume_experience_float: float,
+    resume_experience_formatted: str,
     *,
     api_key: str = None,
     model: str = "gemini-2.5-flash"
 ) -> dict:
     """
-    Use LLM to score a resume against a dynamically structured job description.
-    Returns both per-field and total scores with remarks and skill matching.
+    Uses LLM ONLY for semantic evaluation.
+    All math (total score) is done in Python to avoid hallucinations.
     """
 
     # ---- Extract JD fields dynamically ----
     field_list = list(jd_json.keys())
 
-    # ---- Dynamic scoring instructions ----
-    field_scoring_instructions = "\n".join(
-        [f"- {field}: score this category from 0–100 based on semantic match quality." for field in field_list]
-    )
-
-    # ---- Total Score formula (LLM can decide dynamically) ----
+    # ---- LLM PROMPT (NO TOTAL, NO WEIGHTS) ----
     prompt = f"""
-You are a resume scoring assistant. Compare the following resume JSON with the job description JSON.
+You are a resume evaluation assistant.
+
+Compare the Resume JSON with the Job Description JSON and return structured evaluation.
 
 Resume JSON:
 {json.dumps(resume_json, indent=2)}
 
-JD JSON:
+Job Description JSON:
 {json.dumps(jd_json, indent=2)}
 
-The candidate has {resume_total_experience:.2f} years of experience.
+Candidate experience:
+- Numeric (for comparison only): {resume_experience_float:.2f} years
+- Display (use EXACTLY this text in summary): {resume_experience_formatted}
 
-The available fields are:
+Rules:
+- Do NOT invent experience formats
+- Do NOT use decimals like 0.33 years
+- Use ONLY the provided display experience text
+
+Fields to evaluate:
 {json.dumps(field_list, indent=2)}
 
-Weights:
-{json.dumps(weights, indent=2)}
-
 Instructions:
-1. Evaluate each field listed above.
-{field_scoring_instructions}
+1. For each field, return a score between 0 and 100 (inclusive).
+2. Do NOT calculate total score.
+3. Generate "overall_summary" with ONLY:
+   a) Experience comparison with JD (less / equal / more)
+   b) Where candidate does NOT meet JD
+   c) Where candidate DOES meet JD
+4. Keep it factual and neutral.
+   - No hiring decision
+   - No words like "strong fit", "expert", "ideal"
+Note : Overall Summary must be covered in maximum 5 points 
+5. Classify skills into:
+   - matched_skills
+   - missing_skills
+   - other_skills
 
-2. If a field like "experience" contains years, score it as:
-   - If candidate_exp >= jd_exp → 100
-   - Else → (candidate_exp / jd_exp) * 100 (rounded to 2 decimals).
-   - If JD has no experience requirement, estimate relative to resume content.
-
-3. Compute total score as the weighted sum of all available field scores.
-   Example:
-   total = Σ(field_score[field] × weights[field])
-   Return total rounded to 2 decimals.
-
-4. Add "remarks" for any missing qualifications or outstanding strengths.
-
-5. Additionally classify skills into:
-   - "matched_skills": resume skills that match JD skills
-   - "missing_skills": JD skills not found in resume
-   - "other_skills": remaining resume skills
-
-Return strictly in JSON format as:
+Return STRICT JSON only in this format:
 {{
   "field_scores": {{
-     "skills": <float>,
-     "experience": <float>,
-     "education": <float>,
-     ...
+     "<field_name>": <float between 0 and 100>
   }},
-  "total": <float>,
-  "remarks": ["list of strings"],
-  "matched_skills": ["list"],
-  "missing_skills": ["list"],
-  "other_skills": ["list"]
+  "overall_summary": ["string"],
+  "matched_skills": ["string"],
+  "missing_skills": ["string"],
+  "other_skills": ["string"]
 }}
 """
 
@@ -262,181 +254,52 @@ Return strictly in JSON format as:
     result = call_llm(prompt, model=model, api_key=api_key)
 
     # ---- Handle LLM error ----
-    if isinstance(result, dict) and result.get("error"):
-        err = result["error"]
-        print(f"[LLM ERROR] {err}")
-        # Create a fallback structure for safe return
+    if not isinstance(result, dict) or result.get("error"):
+        err = result.get("error", {})
         return {
             "field_scores": {field: 0.0 for field in field_list},
             "total": 0.0,
-            "remarks": [f"LLM error: {err.get('message', str(err))}"],
+            "overall_summary": [f"LLM error: {err.get('message', str(err))}"],
             "matched_skills": [],
             "missing_skills": [],
             "other_skills": []
         }
 
+    # ---- SAFE TOTAL SCORE CALCULATION (PYTHON) ----
+    field_scores = result.get("field_scores", {})
+    result["total"] = compute_total_score(field_scores, weights)
+
     return result
 
-
-# ----------------- Test Runner -----------------
-if __name__ == "__main__":
-    resume_json = {
-        "skills": ["Python", "SQL", "ML"],
-        "experience": [
-            {"company": "X", "role": "Dev", "start_date": "2022-01", "end_date": "2023-01"}
-        ],
-        "education": [{"degree": "B.Tech", "institution": "ABC University", "year": "2022"}],
-        "certifications": ["AWS Certified"]
-    }
-
-    jd_json = {
-        "title": "Data Scientist",
-        "fields": {
-            "skills": ["Python", "Machine Learning", "Tableau"],
-            "experience": "2 yr",
-            "education": "B.Tech",
-            "certifications": ["AWS Certified", "Azure Certified"],
-            "tools": ["TensorFlow", "PowerBI"]
-        }
-    }
-
-    weights = {
-        "skills": 0.3,
-        "experience": 0.25,
-        "education": 0.2,
-        "certifications": 0.15,
-        "tools": 0.1
-    }
-
-    resume_total_experience = 2.0
-    print("Evaluating...\n")
-    result = generate_score(resume_json, jd_json, weights, resume_total_experience)
-    print(json.dumps(result, indent=2))
-
-
-
-
-
-# import json
-
-# def generate_score(
-#     resume_json: dict,
-#     jd_json: dict,
-#     weights: dict,
-#     resume_total_experience: float,
-#     *,
-#     api_key: str = None,
-#     model: str = "gemini-2.5-flash"
-# ) -> dict:
-#     """
-#     Scores a resume against a dynamic JD structure.
-#     - Field scores (0–100) are produced by LLM
-#     - Total score (0–100) is computed in backend using normalized weights
-#     """
-
-#     # -----------------------------
-#     # 1️⃣ Extract JD fields dynamically
-#     # -----------------------------
-#     field_list = list(jd_json.keys())
-
-#     # -----------------------------
-#     # 2️⃣ LLM scoring instructions (NO TOTAL CALCULATION)
-#     # -----------------------------
-#     field_scoring_instructions = "\n".join(
-#         [
-#             f"- {field}: score this category from 0–100 based on semantic match quality."
-#             for field in field_list
-#         ]
-#     )
-
-#     prompt = f"""
-# You are a resume scoring assistant.
-
-# Compare the following resume JSON with the job description JSON.
-
-# Resume JSON:
-# {json.dumps(resume_json, indent=2)}
-
-# JD JSON:
-# {json.dumps(jd_json, indent=2)}
-
-# The candidate has {resume_total_experience:.2f} years of experience.
-
-# Fields to evaluate:
-# {json.dumps(field_list, indent=2)}
-
-# Instructions:
-# 1. Evaluate EACH field listed above independently.
-# {field_scoring_instructions}
-
-# 2. If a field like "experience" contains years, score it as:
-#    - If candidate_exp >= jd_exp → 100
-#    - Else → (candidate_exp / jd_exp) × 100 (rounded to 2 decimals)
-#    - If JD has no experience requirement, estimate relative to resume content
-
-# 3. DO NOT compute total score.
-# 4. Add remarks for missing qualifications or strong matches.
-
-# 5. Additionally classify skills into:
-#    - matched_skills
-#    - missing_skills
-#    - other_skills
-
-# Return STRICTLY valid JSON in this format:
-# {{
-#   "field_scores": {{
-#     "<field_name>": <float 0-100>
-#   }},
-#   "remarks": ["string"],
-#   "matched_skills": ["string"],
-#   "missing_skills": ["string"],
-#   "other_skills": ["string"]
-# }}
-# """
-
-#     # -----------------------------
-#     # 3️⃣ Call LLM
-#     # -----------------------------
-#     result = call_llm(prompt, model=model, api_key=api_key)
-
-#     # -----------------------------
-#     # 4️⃣ LLM error fallback
-#     # -----------------------------
-#     if isinstance(result, dict) and result.get("error"):
-#         err = result["error"]
-#         return {
-#             "field_scores": {field: 0.0 for field in field_list},
-#             "total": 0.0,
-#             "remarks": [f"LLM error: {err.get('message', str(err))}"],
-#             "matched_skills": [],
-#             "missing_skills": [],
-#             "other_skills": []
-#         }
-
-#     # -----------------------------
-#     # 5️⃣ Backend total score calculation (NORMALIZED)
-#     # -----------------------------
-#     field_scores = result.get("field_scores", {})
-
-#     total_weight = sum(weights.values()) or 1.0
-
-#     total_score = 0.0
-#     for field, score in field_scores.items():
-#         weight = weights.get(field, 0.0)
-#         normalized_weight = weight / total_weight
-#         total_score += float(score) * normalized_weight
-
-#     # Clamp safety
-#     total_score = max(0.0, min(100.0, round(total_score, 2)))
-
-#     # -----------------------------
-#     # 6️⃣ Final response (PIPELINE SAFE)
-#     # -----------------------------
-#     return {
-#         "field_scores": field_scores,
-#         "total": total_score,
-#         "remarks": result.get("remarks", []),
-#         "matched_skills": result.get("matched_skills", []),
-#         "missing_skills": result.get("missing_skills", []),
-#         "other_skills": result.get("other_skills", [])
+# # Testing code
+# if __name__ == "__main__":
+#     # Simulated LLM returned scores (0-100 per field)
+#     llm_field_scores = {
+#     "skills": 85,
+#     "experience": 95,
+#     "education": 80,
+#     "certifications": 70,
+#     "tools": 50,
+#     "projects": 75,
+#     "communication": 65,
+#     "leadership": 60,
+#     "problem_solving": 90,
+#     "adaptability": 55
 #     }
+
+#     # Example user-provided weights (not normalized, can sum to > 1 or any number)
+#     user_weights = {
+#     "skills": 100,
+#     "experience": 100,
+#     "education": 50,
+#     "certifications": 20,
+#     "tools": 30,
+#     "projects": 80,
+#     "communication": 80,
+#     "leadership": 60,
+#     "problem_solving": 90,
+#     "adaptability": 90
+#     }
+
+#     total = compute_total_score(llm_field_scores, user_weights)
+#     print(f"Computed total score: {total}")

@@ -1,4 +1,5 @@
 # db_fetcher.py
+from typing import List
 from pymongo import MongoClient
 from backend.shared.schema import ResumeDBSchema
 
@@ -9,19 +10,25 @@ def clean_mongo_doc(doc: dict) -> dict:
     """
     doc = dict(doc)  # make a safe copy
 
-    # Convert _id → string so Pydantic can accept it
-    if "_id" in doc:
-        doc["_id"] = str(doc["_id"])
+    # # Convert _id → string so Pydantic can accept it
+    # if "_id" in doc:
+    #     doc["_id"] = str(doc["_id"])
 
+    # return doc
+    doc.pop("_id",None)
     return doc
 
 
-def fetch_resumes(mongo_url: str, db_name: str, collection: str):
+def fetch_resumes(mongo_url: str, db_name: str, collection: str,jd_skills: List[str]=None):
     client = MongoClient(mongo_url)
     db = client[db_name]
     coll = db[collection]
 
-    documents = list(coll.find({}))
+    query={}
+    if jd_skills:
+        query["resume_json.skills"]={"$in":jd_skills}
+
+    documents = list(coll.find(query))
     if not documents:
         raise ValueError("No resumes found in database.")
 

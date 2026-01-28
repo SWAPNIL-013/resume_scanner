@@ -1,13 +1,12 @@
 import json
 import shutil
 import tempfile
-from fastapi import APIRouter, FastAPI, UploadFile, File, Query, Body, Header, HTTPException, status
-from typing import List
-
+from fastapi import APIRouter, UploadFile, File, Query, Body, Header, HTTPException, status
 from openpyxl import load_workbook
+from backend.fetch_from_db_backend.db_fetcher import fetch_resumes
 from backend.shared.parser import extract_text_from_jd
-from backend.shared.schema import ExportRequest, LoginRequest, RegisterRequest
-from backend.shared.auth import register_user, authenticate_user, create_access_token, get_user_from_token
+from backend.shared.schema import ExportRequest
+from backend.shared.auth import get_user_from_token
 from backend.shared.exporter import export_to_excel, get_new_excel_name, EXPORTS_DIR,export_to_mongo
 from backend.shared.llm import generate_jd_json
 from backend.shared.pipeline import run_pipeline_db
@@ -131,19 +130,28 @@ async def evaluate_resumes_db(
     else:
         print("⚙️ No JD provided — try again")
 
-    try:
-        processed_resumes = run_pipeline_db(
-            mongo_url=mongo_url,
-            db_name=db_name,
-            collection_name=collection_name,
-            weights=weights,
-            jd_json=jd_json,
-            username=user.get("username"),
-            api_key=api_key,
-            model=model,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline processing failed: {e}")
+    # Fetch raw documents from DB with optional JD skills filter
+    jd_skills = jd_json.get("skills", []) if jd_json else []
+    documents = fetch_resumes(mongo_url, db_name, collection_name, jd_skills=jd_skills)
+
+    if not documents:
+        return {"status": "error", "message": "No resumes found in DB matching filters."}
+
+    processed_resumes = []
+
+    for doc in documents:
+        try:
+            processed_doc = run_pipeline_db(
+                doc,
+                weights=weights,
+                jd_json=jd_json,
+                username=user.get("username"),
+                api_key=api_key,
+                model=model,
+            )
+            processed_resumes.append(processed_doc)
+        except Exception as e:
+            print(f"⚠️ Failed processing document with email {doc.get('resume_json', {}).get('email', 'N/A')}: {e}")
 
     if not processed_resumes:
         return {"status": "error", "message": "No valid resumes to process."}
@@ -152,7 +160,8 @@ async def evaluate_resumes_db(
         "status": "success",
         "count": len(processed_resumes),
         "data": processed_resumes,
-        "jd_mode": "enabled" if jd_data and jd_data.get("jd_text") else "disabled",
+       "jd_mode": "enabled" if jd_json else "disabled"
+       # "jd_mode": "enabled" if jd_data and jd_data.get("jd_text") else "disabled",
     }
 
 
@@ -232,7 +241,7 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
             req.file_path = get_new_excel_name(base_dir=user_base)
 
         df = export_to_excel(
-            resume_list=req.processed_resumes,
+            documents=req.processed_resumes,
             mode=req.mode,
             file_path=req.file_path,
             sheet_name=req.sheet_name,
@@ -285,7 +294,7 @@ async def export_resumes_mongo(req: dict, authorization: str = Header(None)):
         print("✅ Data export received for MongoDB")
         return {
             "status": "success",
-            "inserted_count": result["inserted_count"],
+            "updated_count": result["updated_count"],
             "db_name": db_name,
             "collection_name": collection_name
         }

@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 from typing import List,Dict,Any, Optional
 
@@ -14,10 +15,11 @@ class Education(BaseModel):
 class Experience(BaseModel):
     company: str
     role: Optional[str] = None
-    start_date: str
-    end_date: str
-    description: str
+    start_date: Optional[str]=None
+    end_date: Optional[str]=None
+    description: Optional[str]=None
     duration_years: Optional[str] = None
+
 
 class ResumeSchema(BaseModel):
     name: Optional[str] = None
@@ -30,7 +32,7 @@ class ResumeSchema(BaseModel):
     education: List[Education] = []
     experience: List[Experience] = []
     certifications: List[str] = []
-
+  
 class ExportRequest(BaseModel):
     processed_resumes: List[Dict]
     mode: str = "new_file"           
@@ -67,27 +69,18 @@ class JobDescriptionSchema(BaseModel):
 
 
 
-# db_schema
-class Project(BaseModel):
-    title: str
-    description: str
-    technologies: List[str] = []
+class Evaluation(BaseModel):
+    jd_id: str
+    jd_title: str
+    score: float
+    overall_summary: List[str] = []
+    matched_skills: List[str] = []
+    missing_skills: List[str] = []
+    other_skills: List[str] = []
+    scoring_breakdown: dict = {}
+    evaluated_at: Optional[datetime] = None
 
-class Education(BaseModel):
-    degree: str
-    institution: str
-    year: str
-
-class Experience(BaseModel):
-    company: str
-    role: str
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    description: str
-    duration_years: Optional[str] = None
-
-class ResumeDBSchema(BaseModel):
-    _id: Optional[str]
+class ResumeInfo(BaseModel):
     name: str
     email: str
     phone: Optional[str] = None
@@ -99,4 +92,11 @@ class ResumeDBSchema(BaseModel):
     experience: List[Experience] = []
     certifications: List[str] = []
     total_experience_years: Optional[str] = None
-    uploaded_at: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+
+# used by db_fetcher
+class ResumeDBSchema(BaseModel):
+    _id: Optional[str]
+    resume_json: ResumeInfo
+    evaluations: List[Evaluation] = []
+

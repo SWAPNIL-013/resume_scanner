@@ -236,7 +236,7 @@ async def export_resumes_excel(req: ExportRequest, authorization: str = Header(N
             req.file_path = get_new_excel_name(base_dir=user_base)
 
         df = export_to_excel(
-            resume_list=req.processed_resumes,
+            documents=req.processed_resumes,
             mode=req.mode,
             file_path=req.file_path,
             sheet_name=req.sheet_name,

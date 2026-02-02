@@ -29,3 +29,6 @@ test.py
 
 # temp
 temp_jd/
+
+# admin
+create_admin.py

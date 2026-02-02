@@ -271,7 +271,6 @@ def app():
                         st.error("Unexpected error occurred.")
                         pass
 
-                # --- AFTER SPINNER (SAFE ZONE) ---
                 # SUCCESS
                 if resp.status_code == 200:
                     st.session_state.fetch_resume_count = data.get("resume_count", 0)
@@ -346,18 +345,22 @@ def app():
 
             # 🎚️ Sliders
             st.subheader("🎚️ Assign Weights")
-
+            st.caption(
+                "You can assign any weight values. Even if the total exceeds 100, "
+                "the system automatically normalizes weights during scoring, "
+                "so the final candidate score will always be out of 100."
+            )
             weights = {}
             for field in st.session_state.fetch_jd_fields:
                 default_val = st.session_state.fetch_weights.get(field, 0.2) * 100
                 weights[field] = st.slider(
                     f"{field.capitalize()} Weight (%)",
                     0, 100, int(default_val), 5,
-                    key=f"fetch_w_{field}"   # ✅ FIXED
+                    key=f"fetch_w_{field}"   
                 )
 
             total = sum(weights.values())
-            st.markdown(f"**Total Weight Sum:** `{total}%`")
+            st.markdown(f"**Total Weight Sum:** `{total}`")
 
             st.session_state.fetch_weights = {
                 k: round(v / 100, 2) for k, v in weights.items()
@@ -449,7 +452,9 @@ def app():
 
                 name = resume_json.get("name", "Unnamed Candidate").title()
                 score=latest_eval.get("score","N/A")
-                with st.expander(f"▶ {name} | Score: {score}"):
+                email=resume_json.get("email","")
+                contact=resume_json.get("phone","")
+                with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
                     st.markdown(f"**Email:** {resume_json.get('email','')}")
                     st.markdown(f"**Phone:** {resume_json.get('phone','')}")
                     st.markdown(f"**Location:** {resume_json.get('location','')}")

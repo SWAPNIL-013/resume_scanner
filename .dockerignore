@@ -29,3 +29,6 @@ test.py
 
 # Temporary job description files
 temp_jd/
+
+# Admin
+create_admin.py

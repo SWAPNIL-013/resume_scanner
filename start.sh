@@ -1,5 +1,5 @@
 #!/bin/bash
-# start.sh
+# ./start.sh
 
 
 # Start FastAPI in the background

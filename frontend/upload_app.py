@@ -281,7 +281,11 @@ def app():
             # Show sliders if available
             if st.session_state.upload_jd_fields:
                 st.subheader("🎚️ Assign Weights")
-
+                st.caption(
+                    "You can assign any weight values. Even if the total exceeds 100, "
+                    "the system automatically normalizes weights during scoring, "
+                    "so the final candidate score will always be out of 100."
+                )
                 weights = {}
                 for field in st.session_state.upload_jd_fields:
                     default_val = st.session_state.upload_weights.get("weights", {}).get(field, 0.2) * 100
@@ -292,7 +296,7 @@ def app():
                     )
 
                 total = sum(weights.values())
-                st.markdown(f"**Total Weight Sum:** `{total}%`")
+                st.markdown(f"**Total Weight Sum:** `{total}`")
 
                 weights = {k: round(v / 100, 2) for k, v in weights.items()}
                 st.session_state.upload_weights = weights
@@ -386,18 +390,10 @@ def app():
         # --------------------------
         # Step 4: Display Results
         # --------------------------
-        # sorted_results = sorted(
-        # st.session_state.fetch_results,
-        # key=lambda r: r.get("score", 0),
-        # reverse=True
-        # )
 
         if st.session_state.upload_step >= 4 and st.session_state.upload_results:
             st.subheader("Review Evaluation Results")
-            # sorted_results = sorted(
-            #     st.session_state.upload_results,
-            #     key=lambda r: r.get("evaluations", [{}])[-1].get("score", 0),
-            #     reverse=True)
+
             def get_latest_score(resume):
                 evaluations = resume.get("evaluations", [])
                 if evaluations:
@@ -418,7 +414,9 @@ def app():
 
                 name = resume_json.get("name", "Unnamed Candidate").title()
                 score=latest_eval.get("score","N/A")
-                with st.expander(f"▶ {name} | Score: {score}"):
+                email=resume_json.get("email","")
+                contact=resume_json.get("phone","")
+                with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
                     st.markdown(f"**Email:** {resume_json.get('email','')}")
                     st.markdown(f"**Phone:** {resume_json.get('phone','')}")
                     st.markdown(f"**Location:** {resume_json.get('location','')}")

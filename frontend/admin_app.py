@@ -34,7 +34,8 @@ def app():
             st.session_state.current_user = None
             st.session_state.show_auth = True  # keep for compatibility
             st.session_state.user_role = None           # clear role if you track it
-            st.session_state.selected_app = None        # reset selected app card          
+            st.session_state.selected_app = None        # reset selected app card       
+            reset_admin_state()   
             force_rerun()
     with st.sidebar:
         st.header("Account")

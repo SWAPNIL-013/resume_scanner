@@ -40,10 +40,17 @@ def reset_upload_state():
     st.session_state.upload_save_mode = None
     st.session_state.upload_jd_fields = []
     st.session_state.upload_jd_json = {}
+    st.session_state.page = 1
+
 
 
 
 def app():
+        st.set_page_config(
+            page_title="Resume Evaluator",
+            layout="wide",
+            initial_sidebar_state="expanded"
+        )
         # --------------------------
         # Session State Defaults
         # --------------------------
@@ -138,6 +145,7 @@ def app():
                 st.session_state.show_auth = True  # kept for compatibility
                 st.session_state.user_role = None           # clear role if you track it
                 st.session_state.selected_app = None        # reset selected app card
+                reset_upload_state()
                 force_rerun()
         with st.sidebar:
             # --------------------------
@@ -391,142 +399,336 @@ def app():
         # Step 4: Display Results
         # --------------------------
 
+#         if st.session_state.upload_step >= 4 and st.session_state.upload_results:
+#             st.subheader("Review Evaluation Results")
+
+#             def get_latest_score(resume):
+#                 evaluations = resume.get("evaluations", [])
+#                 if evaluations:
+#                     return evaluations[-1].get("score", 0)
+#                 else:
+#                     return 0  # or some default score when no evaluation exists
+
+#             sorted_results = sorted(
+#                 st.session_state.upload_results,
+#                 key=get_latest_score,
+#                 reverse=True
+# )
+
+#             for resume in sorted_results:
+#                 resume_json = resume.get("resume_json", {})
+#                 evaluations = resume.get("evaluations", [])
+#                 latest_eval = evaluations[-1] if evaluations else {}
+
+#                 name = resume_json.get("name", "Unnamed Candidate").title()
+#                 score=latest_eval.get("score","N/A")
+#                 email=resume_json.get("email","")
+#                 contact=resume_json.get("phone","")
+#                 with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
+#                     st.markdown(f"**Email:** {resume_json.get('email','')}")
+#                     st.markdown(f"**Phone:** {resume_json.get('phone','')}")
+#                     st.markdown(f"**Location:** {resume_json.get('location','')}")
+#                     # URLs
+#                     urls = resume_json.get("urls", [])
+#                     if urls:
+#                         st.markdown("**URLs:**")
+#                         for url in urls:
+#                             st.markdown(f"- {url}")
+
+#                     # Skills
+#                     skills = resume_json.get("skills", [])
+#                     if skills:
+#                         st.markdown("**Skills:**")
+#                         skill_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#e0f7fa;color:#006064;"
+#                             f"padding:5px 10px;margin:3px;border-radius:8px'>{s}</span>"
+#                             for s in skills
+#                         ])
+#                         st.markdown(skill_cards, unsafe_allow_html=True)
+
+#                     # Education
+#                     education = resume_json.get("education", [])
+#                     if education:
+#                         st.markdown("**Education:**")
+#                         edu_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#f1f8e9;color:#33691e;"
+#                             f"padding:5px 10px;margin:3px;border-radius:8px'>"
+#                             f"{edu.get('degree','')} - {edu.get('institution','')} ({edu.get('year','')})</span>"
+#                             for edu in education if isinstance(edu, dict)
+#                         ])
+#                         st.markdown(edu_cards, unsafe_allow_html=True)
+
+#                     # Experience
+#                     experience = resume_json.get("experience", [])
+#                     if experience:
+#                         st.markdown("**Experience:**")
+#                         exp_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#fff3e0;color:#e65100;"
+#                             f"padding:5px 10px;margin:3px;border-radius:8px'>"
+#                             f"{exp.get('role','')} at {exp.get('company','')} "
+#                             f"({exp.get('start_date','')} - {exp.get('end_date','')})</span>"
+#                             for exp in experience if isinstance(exp, dict)
+#                         ])
+#                         st.markdown(exp_cards, unsafe_allow_html=True)
+
+#                     # Projects
+#                     projects = resume_json.get("projects", [])
+#                     if projects:
+#                         st.markdown("**Projects:**")
+#                         proj_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#f3e5f5;color:#4a148c;"
+#                             f"padding:5px 10px;margin:3px;border-radius:8px'>"
+#                             f"{proj.get('title','')} [{', '.join(proj.get('technologies',[]))}]: "
+#                             f"{proj.get('description','')}</span>"
+#                             for proj in projects if isinstance(proj, dict)
+#                         ])
+#                         st.markdown(proj_cards, unsafe_allow_html=True)
+
+#                     # Certifications
+#                     certs = resume_json.get("certifications", [])
+#                     if certs:
+#                         st.markdown("**Certifications:**")
+#                         cert_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#ede7f6;color:#311b92;"
+#                             f"padding:5px 10px;margin:3px;border-radius:8px'>{c}</span>"
+#                             for c in certs
+#                         ])
+#                         st.markdown(cert_cards, unsafe_allow_html=True)
+
+#                     # --------------------------
+#                     # Summary Section
+#                     # --------------------------
+#                     st.markdown("---")
+#                     st.markdown("### 📊 Summary")
+
+#                     # Matched Skills
+#                     matched = latest_eval.get("matched_skills", [])
+#                     if matched:
+#                         st.markdown("**✅ Matched Skills (from JD):**")
+#                         matched_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#c8e6c9;color:#1b5e20;"
+#                             f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+#                             for s in matched
+#                         ])
+#                         st.markdown(matched_cards, unsafe_allow_html=True)
+
+#                     # Missing Skills
+#                     missing = latest_eval.get("missing_skills", [])
+#                     if missing:
+#                         st.markdown("**⚠️ Missing Skills (from JD):**")
+#                         missing_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#ffcdd2;color:#b71c1c;"
+#                             f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+#                             for s in missing
+#                         ])
+#                         st.markdown(missing_cards, unsafe_allow_html=True)
+
+#                     # Other Skills
+#                     other = latest_eval.get("other_skills", [])
+#                     if other:
+#                         st.markdown("**🟡 Other Skills (not in JD):**")
+#                         other_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#fff9c4;color:#f57f17;"
+#                             f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+#                             for s in other
+#                         ])
+#                         st.markdown(other_cards, unsafe_allow_html=True)
+
+#                     # Total Experience
+#                     exp_years = resume_json.get("total_experience_years", "N/A")
+#                     st.markdown(
+#                         f"<span style='display:inline-block;background:#fff8e1;color:#f57f17;"
+#                         f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
+#                         f"🧮 Total Experience: {exp_years}</span>",
+#                         unsafe_allow_html=True
+#                     )
+
+#                     # Overall Score
+#                     score = latest_eval.get("score", "N/A")
+#                     st.markdown(
+#                         f"<span style='display:inline-block;background:#e8f5e9;color:#1b5e20;"
+#                         f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
+#                         f"🎯 Overall Score: {score}</span>",
+#                         unsafe_allow_html=True
+#                     )
+
+#                     # Remarks
+#                     remarks = latest_eval.get("overall_summary", [])
+#                     if remarks:
+#                         st.markdown("**💬 Remarks / Feedback:**")
+#                         remark_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#fce4ec;color:#880e4f;"
+#                             f"padding:6px 12px;margin:3px;border-radius:10px'>{r}</span>"
+#                             for r in remarks
+#                         ])
+#                         st.markdown(remark_cards, unsafe_allow_html=True)
+
+#                     # Scoring Breakdown
+#                     breakdown = latest_eval.get("scoring_breakdown", {})
+#                     if breakdown:
+#                         st.markdown("**📈 Scoring Breakdown:**")
+#                         breakdown_cards = " ".join([
+#                             f"<span style='display:inline-block;background:#e3f2fd;color:#0d47a1;"
+#                             f"padding:6px 12px;margin:3px;border-radius:10px'>{k.capitalize()}: {v}</span>"
+#                             for k, v in breakdown.items()
+#                         ])
+#                         st.markdown(breakdown_cards, unsafe_allow_html=True)
         if st.session_state.upload_step >= 4 and st.session_state.upload_results:
             st.subheader("Review Evaluation Results")
+
+            ITEMS_PER_PAGE = 10
+
+            if "page" not in st.session_state:
+                st.session_state.page = 1
 
             def get_latest_score(resume):
                 evaluations = resume.get("evaluations", [])
                 if evaluations:
                     return evaluations[-1].get("score", 0)
-                else:
-                    return 0  # or some default score when no evaluation exists
+                return 0
 
             sorted_results = sorted(
                 st.session_state.upload_results,
                 key=get_latest_score,
                 reverse=True
-)
+            )
 
-            for resume in sorted_results:
+            total_items = len(sorted_results)
+            total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+
+            start_idx = (st.session_state.page - 1) * ITEMS_PER_PAGE
+            end_idx = start_idx + ITEMS_PER_PAGE
+            page_results = sorted_results[start_idx:end_idx]
+
+
+            # Display paginated resumes
+            for resume in page_results:
                 resume_json = resume.get("resume_json", {})
                 evaluations = resume.get("evaluations", [])
                 latest_eval = evaluations[-1] if evaluations else {}
 
                 name = resume_json.get("name", "Unnamed Candidate").title()
-                score=latest_eval.get("score","N/A")
-                email=resume_json.get("email","")
-                contact=resume_json.get("phone","")
-                with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
+                score = latest_eval.get("score", "N/A")
+                email = resume_json.get("email", "")
+                contact = resume_json.get("phone", "")
+
+                with st.expander(
+                    f"▶ {name}   | Score: {score}   | Email: {email}   | Contact: {contact}"
+                ):
                     st.markdown(f"**Email:** {resume_json.get('email','')}")
                     st.markdown(f"**Phone:** {resume_json.get('phone','')}")
                     st.markdown(f"**Location:** {resume_json.get('location','')}")
-                    # URLs
+
                     urls = resume_json.get("urls", [])
                     if urls:
                         st.markdown("**URLs:**")
                         for url in urls:
                             st.markdown(f"- {url}")
 
-                    # Skills
                     skills = resume_json.get("skills", [])
                     if skills:
                         st.markdown("**Skills:**")
-                        skill_cards = " ".join([
-                            f"<span style='display:inline-block;background:#e0f7fa;color:#006064;"
-                            f"padding:5px 10px;margin:3px;border-radius:8px'>{s}</span>"
-                            for s in skills
-                        ])
-                        st.markdown(skill_cards, unsafe_allow_html=True)
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#e0f7fa;color:#006064;"
+                                f"padding:5px 10px;margin:3px;border-radius:8px'>{s}</span>"
+                                for s in skills
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Education
                     education = resume_json.get("education", [])
                     if education:
                         st.markdown("**Education:**")
-                        edu_cards = " ".join([
-                            f"<span style='display:inline-block;background:#f1f8e9;color:#33691e;"
-                            f"padding:5px 10px;margin:3px;border-radius:8px'>"
-                            f"{edu.get('degree','')} - {edu.get('institution','')} ({edu.get('year','')})</span>"
-                            for edu in education if isinstance(edu, dict)
-                        ])
-                        st.markdown(edu_cards, unsafe_allow_html=True)
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#f1f8e9;color:#33691e;"
+                                f"padding:5px 10px;margin:3px;border-radius:8px'>"
+                                f"{e.get('degree','')} - {e.get('institution','')} ({e.get('year','')})</span>"
+                                for e in education if isinstance(e, dict)
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Experience
                     experience = resume_json.get("experience", [])
                     if experience:
                         st.markdown("**Experience:**")
-                        exp_cards = " ".join([
-                            f"<span style='display:inline-block;background:#fff3e0;color:#e65100;"
-                            f"padding:5px 10px;margin:3px;border-radius:8px'>"
-                            f"{exp.get('role','')} at {exp.get('company','')} "
-                            f"({exp.get('start_date','')} - {exp.get('end_date','')})</span>"
-                            for exp in experience if isinstance(exp, dict)
-                        ])
-                        st.markdown(exp_cards, unsafe_allow_html=True)
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#fff3e0;color:#e65100;"
+                                f"padding:5px 10px;margin:3px;border-radius:8px'>"
+                                f"{e.get('role','')} at {e.get('company','')} "
+                                f"({e.get('start_date','')} - {e.get('end_date','')})</span>"
+                                for e in experience if isinstance(e, dict)
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Projects
                     projects = resume_json.get("projects", [])
                     if projects:
                         st.markdown("**Projects:**")
-                        proj_cards = " ".join([
-                            f"<span style='display:inline-block;background:#f3e5f5;color:#4a148c;"
-                            f"padding:5px 10px;margin:3px;border-radius:8px'>"
-                            f"{proj.get('title','')} [{', '.join(proj.get('technologies',[]))}]: "
-                            f"{proj.get('description','')}</span>"
-                            for proj in projects if isinstance(proj, dict)
-                        ])
-                        st.markdown(proj_cards, unsafe_allow_html=True)
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#f3e5f5;color:#4a148c;"
+                                f"padding:5px 10px;margin:3px;border-radius:8px'>"
+                                f"{p.get('title','')} [{', '.join(p.get('technologies',[]))}]: "
+                                f"{p.get('description','')}</span>"
+                                for p in projects if isinstance(p, dict)
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Certifications
                     certs = resume_json.get("certifications", [])
                     if certs:
                         st.markdown("**Certifications:**")
-                        cert_cards = " ".join([
-                            f"<span style='display:inline-block;background:#ede7f6;color:#311b92;"
-                            f"padding:5px 10px;margin:3px;border-radius:8px'>{c}</span>"
-                            for c in certs
-                        ])
-                        st.markdown(cert_cards, unsafe_allow_html=True)
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#ede7f6;color:#311b92;"
+                                f"padding:5px 10px;margin:3px;border-radius:8px'>{c}</span>"
+                                for c in certs
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # --------------------------
-                    # Summary Section
-                    # --------------------------
                     st.markdown("---")
                     st.markdown("### 📊 Summary")
 
-                    # Matched Skills
                     matched = latest_eval.get("matched_skills", [])
                     if matched:
-                        st.markdown("**✅ Matched Skills (from JD):**")
-                        matched_cards = " ".join([
-                            f"<span style='display:inline-block;background:#c8e6c9;color:#1b5e20;"
-                            f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
-                            for s in matched
-                        ])
-                        st.markdown(matched_cards, unsafe_allow_html=True)
+                        st.markdown("**✅ Matched Skills:**")
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#c8e6c9;color:#1b5e20;"
+                                f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+                                for s in matched
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Missing Skills
                     missing = latest_eval.get("missing_skills", [])
                     if missing:
-                        st.markdown("**⚠️ Missing Skills (from JD):**")
-                        missing_cards = " ".join([
-                            f"<span style='display:inline-block;background:#ffcdd2;color:#b71c1c;"
-                            f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
-                            for s in missing
-                        ])
-                        st.markdown(missing_cards, unsafe_allow_html=True)
+                        st.markdown("**⚠️ Missing Skills:**")
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#ffcdd2;color:#b71c1c;"
+                                f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+                                for s in missing
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Other Skills
                     other = latest_eval.get("other_skills", [])
                     if other:
-                        st.markdown("**🟡 Other Skills (not in JD):**")
-                        other_cards = " ".join([
-                            f"<span style='display:inline-block;background:#fff9c4;color:#f57f17;"
-                            f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
-                            for s in other
-                        ])
-                        st.markdown(other_cards, unsafe_allow_html=True)
+                        st.markdown("**🟡 Other Skills:**")
+                        st.markdown(
+                            " ".join(
+                                f"<span style='display:inline-block;background:#fff9c4;color:#f57f17;"
+                                f"padding:6px 12px;margin:3px;border-radius:10px'>{s}</span>"
+                                for s in other
+                            ),
+                            unsafe_allow_html=True
+                        )
 
-                    # Total Experience
                     exp_years = resume_json.get("total_experience_years", "N/A")
                     st.markdown(
                         f"<span style='display:inline-block;background:#fff8e1;color:#f57f17;"
@@ -535,8 +737,6 @@ def app():
                         unsafe_allow_html=True
                     )
 
-                    # Overall Score
-                    score = latest_eval.get("score", "N/A")
                     st.markdown(
                         f"<span style='display:inline-block;background:#e8f5e9;color:#1b5e20;"
                         f"padding:8px 14px;margin:3px;border-radius:10px;font-weight:600;'>"
@@ -544,28 +744,26 @@ def app():
                         unsafe_allow_html=True
                     )
 
-                    # Remarks
-                    remarks = latest_eval.get("overall_summary", [])
-                    if remarks:
-                        st.markdown("**💬 Remarks / Feedback:**")
-                        remark_cards = " ".join([
-                            f"<span style='display:inline-block;background:#fce4ec;color:#880e4f;"
-                            f"padding:6px 12px;margin:3px;border-radius:10px'>{r}</span>"
-                            for r in remarks
-                        ])
-                        st.markdown(remark_cards, unsafe_allow_html=True)
+            # Pagination controls (top)
+            col1, col2, col3 = st.columns([1, 2, 1])
 
-                    # Scoring Breakdown
-                    breakdown = latest_eval.get("scoring_breakdown", {})
-                    if breakdown:
-                        st.markdown("**📈 Scoring Breakdown:**")
-                        breakdown_cards = " ".join([
-                            f"<span style='display:inline-block;background:#e3f2fd;color:#0d47a1;"
-                            f"padding:6px 12px;margin:3px;border-radius:10px'>{k.capitalize()}: {v}</span>"
-                            for k, v in breakdown.items()
-                        ])
-                        st.markdown(breakdown_cards, unsafe_allow_html=True)
+            with col1:
+                if st.button("⬅ Prev", disabled=st.session_state.page <= 1):
+                    st.session_state.page -= 1
+                    st.rerun()
 
+            with col2:
+                st.markdown(
+                    f"<div style='text-align:center;font-weight:600;'>"
+                    f"Page {st.session_state.page} of {total_pages}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+            with col3:
+                if st.button("Next ➡", disabled=st.session_state.page >= total_pages):
+                    st.session_state.page += 1
+                    st.rerun()
 
   
         # --------------------------

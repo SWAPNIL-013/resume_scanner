@@ -45,9 +45,19 @@ def reset_fetch_state():
     st.session_state.fetch_resume_count = 0
     st.session_state.fetch_jd_fields = []
     st.session_state.fetch_jd_json = {}
+    st.session_state.fetch_page = 1
+    st.session_state.mongo_url = ""
+    st.session_state.db_name = ""
+    st.session_state.collection_name = ""
+
 
 
 def app():
+        st.set_page_config(
+            page_title="Resume Evaluator",
+            layout="wide",
+            initial_sidebar_state="expanded"
+        )
 
         # --------------------------
         # Session & Auth Handling
@@ -102,6 +112,12 @@ def app():
             st.session_state.show_auth = True
         if "fetch_resume_count" not in st.session_state:      
             st.session_state.fetch_resume_count = 0
+        if "mongo_url" not in st.session_state:
+            st.session_state.mongo_url = ""
+        if "db_name" not in st.session_state:
+            st.session_state.db_name = ""
+        if "collection_name" not in st.session_state:
+            st.session_state.collection_name = ""
 
 
         # Fetch username after login if token exists but username missing
@@ -136,7 +152,8 @@ def app():
                 st.session_state.current_user = None
                 st.session_state.show_auth = True
                 st.session_state.user_role = None           # clear role if you track it
-                st.session_state.selected_app = None        # reset selected app card                
+                st.session_state.selected_app = None        # reset selected app card   
+                reset_fetch_state()             
                 force_rerun()
         with st.sidebar:
             # -------------------------
@@ -438,23 +455,83 @@ def app():
         # Step 4: Display Results
         # --------------------------
 
+        # if st.session_state.fetch_step >= 4 and st.session_state.fetch_results:
+        #     st.subheader("Review Evaluation Results")
+        #     sorted_results = sorted(
+        #         st.session_state.fetch_results,
+        #         key=lambda r: r.get("evaluations", [{}])[-1].get("score", 0),
+        #         reverse=True
+        #     )
+        #     for resume in sorted_results:
+        #         resume_json = resume.get("resume_json", {})
+        #         evaluations = resume.get("evaluations", [])
+        #         latest_eval = evaluations[-1] if evaluations else {}
+
+        #         name = resume_json.get("name", "Unnamed Candidate").title()
+        #         score=latest_eval.get("score","N/A")
+        #         email=resume_json.get("email","")
+        #         contact=resume_json.get("phone","")
+        #         with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
         if st.session_state.fetch_step >= 4 and st.session_state.fetch_results:
             st.subheader("Review Evaluation Results")
+
+            ITEMS_PER_PAGE = 10
+
+            if "fetch_page" not in st.session_state:
+                st.session_state.fetch_page = 1
+
+            def get_latest_score(resume):
+                evaluations = resume.get("evaluations", [])
+                if evaluations:
+                    return evaluations[-1].get("score", 0)
+                return 0
+
             sorted_results = sorted(
                 st.session_state.fetch_results,
-                key=lambda r: r.get("evaluations", [{}])[-1].get("score", 0),
+                key=get_latest_score,
                 reverse=True
             )
-            for resume in sorted_results:
+            evaluated_count = len(sorted_results)
+
+            st.markdown(
+                f"""
+                <div style="
+                    background:#1e293b;
+                    color:#e5e7eb;
+                    border-left:4px solid #60a5fa;
+                    padding:10px 14px;
+                    border-left:4px solid #1976d2;
+                    border-radius:6px;
+                    margin-bottom:12px;
+                    font-size:14px;
+                ">
+                    ℹ️ <b>Showing {evaluated_count} evaluated resumes</b><br>
+                    Resumes with no matching JD skills were filtered out and not evaluated.
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            total_items = len(sorted_results)
+            total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+
+            start_idx = (st.session_state.fetch_page - 1) * ITEMS_PER_PAGE
+            end_idx = start_idx + ITEMS_PER_PAGE
+            page_results = sorted_results[start_idx:end_idx]
+            
+
+            for resume in page_results:
                 resume_json = resume.get("resume_json", {})
                 evaluations = resume.get("evaluations", [])
                 latest_eval = evaluations[-1] if evaluations else {}
 
                 name = resume_json.get("name", "Unnamed Candidate").title()
-                score=latest_eval.get("score","N/A")
-                email=resume_json.get("email","")
-                contact=resume_json.get("phone","")
-                with st.expander(f"▶ {name} | Score: {score} | Email: {email} | Contact: {contact}"):
+                score = latest_eval.get("score", "N/A")
+                email = resume_json.get("email", "")
+                contact = resume_json.get("phone", "")
+
+                with st.expander(f"▶ {name}   | Score: {score}   | Email: {email}   | Contact: {contact}"):
+
                     st.markdown(f"**Email:** {resume_json.get('email','')}")
                     st.markdown(f"**Phone:** {resume_json.get('phone','')}")
                     st.markdown(f"**Location:** {resume_json.get('location','')}")
@@ -603,7 +680,33 @@ def app():
                             for k, v in breakdown.items()
                         ])
                         st.markdown(breakdown_cards, unsafe_allow_html=True)
+            # Pagination controls
+            col1, col2, col3 = st.columns([1, 2, 1])
 
+            with col1:
+                if st.button("⬅ Prev", key="fetch_prev", disabled=st.session_state.fetch_page <= 1):
+                    st.session_state.fetch_page -= 1
+                    st.rerun()
+
+            with col2:
+                st.markdown(
+                    f"<div style='text-align:center;font-weight:600;'>"
+                    f"Page {st.session_state.fetch_page} of {total_pages}"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+            with col3:
+                if st.button("Next ➡", key="fetch_next", disabled=st.session_state.fetch_page >= total_pages):
+                    st.session_state.fetch_page += 1
+                    st.rerun()
+
+
+
+
+# --------------------------------
+# Export Section
+# -----------------------------
 
         def fetch_user_export_files():
             try:
